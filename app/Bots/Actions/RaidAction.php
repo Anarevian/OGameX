@@ -7,6 +7,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Date;
 use OGame\Bots\Brain\ActionCandidate;
 use OGame\Bots\Brain\BotContext;
+use OGame\Bots\Perception\BotMemoryService;
 use OGame\Bots\Support\BotFleetService;
 use OGame\GameObjects\Models\Units\UnitCollection;
 use OGame\Models\BotActionLog;
@@ -51,8 +52,10 @@ class RaidAction implements BotAction
      */
     private const ESCORT = ['cruiser', 'battle_ship', 'heavy_fighter', 'light_fighter'];
 
-    public function __construct(private readonly BotFleetService $fleetService)
-    {
+    public function __construct(
+        private readonly BotFleetService $fleetService,
+        private readonly BotMemoryService $memoryService,
+    ) {
     }
 
     /**
@@ -172,9 +175,20 @@ class RaidAction implements BotAction
                 continue;
             }
 
-            if ($loot > $bestLoot) {
+            // A grudge makes a target more attractive than its loot alone justifies. Someone who
+            // has raided this bot repeatedly gets hit back even when a fatter target exists,
+            // which is what makes the relationship visible without a single word being sent.
+            // The fairness caps above still apply in full: a grudge changes who a bot prefers,
+            // never who it is allowed to touch.
+            $attitude = $intel->owner_user_id === null
+                ? 0
+                : $this->memoryService->attitudeTowards($context->player->getId(), $intel->owner_user_id);
+
+            $weighted = $attitude < 0 ? $loot * (1 + (abs($attitude) / 100)) : $loot;
+
+            if ($weighted > $bestLoot) {
                 $best = $intel;
-                $bestLoot = $loot;
+                $bestLoot = $weighted;
             }
         }
 

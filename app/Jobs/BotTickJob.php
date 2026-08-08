@@ -12,7 +12,9 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Log;
 use OGame\Bots\Activity\ActivityScheduler;
 use OGame\Bots\Brain\BotBrain;
+use OGame\Bots\Perception\BotBattleObserver;
 use OGame\Bots\Perception\BotIntelWriter;
+use OGame\Bots\Perception\BotMemoryService;
 use OGame\Bots\Support\BotSynchroniser;
 use OGame\Factories\PlayerServiceFactory;
 use OGame\Models\BotProfile;
@@ -53,6 +55,8 @@ class BotTickJob implements ShouldQueue
         BotBrain $brain,
         ActivityScheduler $scheduler,
         BotIntelWriter $intelWriter,
+        BotBattleObserver $battleObserver,
+        BotMemoryService $memoryService,
     ): void {
         $lockSeconds = (int) config('bots.tick.lock_seconds', 120);
 
@@ -81,6 +85,13 @@ class BotTickJob implements ShouldQueue
             // Read any espionage reports that arrived since the last turn. This must happen
             // before the brain runs, because target selection reads bot_intel and nothing else.
             $intelWriter->absorbReports($profile);
+
+            // Battle reports tell the bot who hurt it and what the fight revealed. Both have to
+            // land before the brain decides anything, because targeting reads them.
+            $battleObserver->absorbReports($profile);
+
+            // Old grudges cool off, so the universe does not calcify into permanent feuds.
+            $memoryService->decayGrudges($profile->user_id);
 
             $actionsTaken = 0;
 

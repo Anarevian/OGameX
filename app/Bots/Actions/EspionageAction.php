@@ -164,7 +164,48 @@ class EspionageAction implements BotAction
             return new Coordinate($row->galaxy, $row->system, $row->planet);
         }
 
-        return null;
+        // Everything nearby has been seen recently, so refresh the report that has decayed the
+        // most while still describing something worth taking. This is the difference between a
+        // bot that scouts once and raids on months-old information forever, and one that keeps
+        // its picture of the neighbourhood current the way an active player does.
+        return $this->pickStaleTarget($context, $ownUserId);
+    }
+
+    /**
+     * Pick the most valuable coordinate whose intel has decayed past usefulness.
+     */
+    private function pickStaleTarget(BotContext $context, int $ownUserId): Coordinate|null
+    {
+        $records = BotIntel::where('bot_user_id', $ownUserId)
+            ->where('source', 'espionage')
+            ->whereNotNull('owner_user_id')
+            ->orderBy('observed_at')
+            ->limit(30)
+            ->get();
+
+        $best = null;
+        $bestWorth = 0.0;
+
+        foreach ($records as $intel) {
+            // Still fresh enough to act on, so there is nothing to gain by looking again.
+            if (!$intel->isStale()) {
+                continue;
+            }
+
+            $payload = $intel->payload ?? [];
+            $worth = (float) (
+                ($payload['metal'] ?? 0)
+                + ($payload['crystal'] ?? 0)
+                + ($payload['deuterium'] ?? 0)
+            );
+
+            if ($worth > $bestWorth) {
+                $best = $intel->coordinate();
+                $bestWorth = $worth;
+            }
+        }
+
+        return $best;
     }
 
     /**

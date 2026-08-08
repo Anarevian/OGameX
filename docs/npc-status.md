@@ -14,7 +14,7 @@ tracks what is actually built, what is verified, and what is known to be wrong o
 | 0 — Groundwork | Data model, marking, synchroniser, spawn/despawn, Docker | **Built.** Verified: see §2. |
 | 1 — Economy bot | Tick driver, activity scheduler, brain, economy actions | **Built.** Verified: see §2. |
 | 2 — Movement and war | Fleet dispatch, espionage, raiding, fleetsave, recovery | **Built.** Expedition, espionage, intel writing, raiding with fairness caps, fleetsave, transport, colonisation and recycling, all tested. Post-battle recovery (rebuilding defence, revenge) is the one piece left, and it belongs with Phase 3's memory work. |
-| 3 — Perception and memory | Intel decay, grudges, skill-scaled mistakes | Not started (tables exist since Phase 0). |
+| 3 — Perception and memory | Intel decay, grudges, skill-scaled mistakes | **Mostly built.** Intel decay, battle observation, grudges with decay, grudge-weighted targeting and re-scouting of stale intel are in and tested. Phalanx as an intel source and post-battle rebuilding are not. |
 | 4 — Alliances | Founding, invites, ACS, buddy handling. No messaging (decision §13.4). | Not started. |
 | 5 — Scale | LOD classification, abstract economy, lazy materialisation, backpressure | Not started. |
 | 6 — Tooling | Admin panel, simulation harness, inspect command, docs | Not started. |
@@ -36,6 +36,7 @@ checks below were actually executed.
 | Phase 1 tests | `./vendor/bin/phpunit --filter BotBrainTest` | **Pass** — 11 tests, 219 assertions (~6min) |
 | Regression | `./vendor/bin/phpunit --filter "GalaxyTest\|BootstrapTest\|AdminTest"` | **Pass** — no existing test affected |
 | Phase 2 tests | `./vendor/bin/phpunit --filter BotFleetTest` | **Pass** — 8 tests |
+| Phase 3 tests | `./vendor/bin/phpunit --filter BotMemoryTest` | **Pass** — 7 tests |
 
 ### How the environment was made to work
 
@@ -166,7 +167,10 @@ Things that are not bugs but are not finished either. Each needs a decision or a
   to forget: the engine does not enforce newbie protection, so those caps are the only thing that
   will protect human players.
 - **LOD is a column, not a behaviour.** `bot_profiles.lod` is written at spawn and never read.
-- **`bot_intel` and `bot_memory` are empty tables.** Nothing writes them until Phase 3.
+- **Nothing writes friendly attitudes yet.** `bot_memory` only ever moves negative: being
+  attacked and being scouted lower it, and decay pulls it back towards zero. Alliance membership,
+  answering an ACS call and accepted buddy requests should raise it, and that belongs with
+  Phase 4.
 
 ---
 
