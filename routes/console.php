@@ -1,5 +1,7 @@
 <?php
 
+use OGame\Console\Commands\Bots\PruneBotActionLog;
+use OGame\Console\Commands\Bots\TickBots;
 use OGame\Console\Commands\Scheduler\CleanupWreckFields;
 use OGame\Console\Commands\Scheduler\DarkMatterRegenerateCommand;
 use OGame\Console\Commands\Scheduler\DeleteOldMessages;
@@ -36,3 +38,11 @@ Schedule::command(DeleteOldMessages::class)->hourly()->withoutOverlapping();
 
 // Process Dark Matter regeneration every 5 minutes
 Schedule::command(DarkMatterRegenerateCommand::class)->everyFiveMinutes()->withoutOverlapping();
+
+// Wake up NPC (bot) players that are due to act. The command only selects due bots and queues
+// one job each, so the sweep stays cheap; withoutOverlapping stops a slow sweep from stacking.
+// Does nothing at all while BOTS_ENABLED is false.
+Schedule::command(TickBots::class)->everyMinute()->withoutOverlapping();
+
+// Keep the NPC decision log bounded.
+Schedule::command(PruneBotActionLog::class)->dailyAt('4:15')->withoutOverlapping();
