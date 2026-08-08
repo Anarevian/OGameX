@@ -15,6 +15,7 @@ use OGame\Bots\Brain\BotBrain;
 use OGame\Bots\Perception\BotBattleObserver;
 use OGame\Bots\Perception\BotIntelWriter;
 use OGame\Bots\Perception\BotMemoryService;
+use OGame\Bots\Scale\BotLodClassifier;
 use OGame\Bots\Social\BotSocialService;
 use OGame\Bots\Support\BotSynchroniser;
 use OGame\Factories\PlayerServiceFactory;
@@ -59,6 +60,7 @@ class BotTickJob implements ShouldQueue
         BotBattleObserver $battleObserver,
         BotMemoryService $memoryService,
         BotSocialService $socialService,
+        BotLodClassifier $lodClassifier,
     ): void {
         $lockSeconds = (int) config('bots.tick.lock_seconds', 120);
 
@@ -107,6 +109,10 @@ class BotTickJob implements ShouldQueue
                 $budget = $scheduler->rollSessionActions($profile);
                 $actionsTaken = $brain->run($player, $profile, $budget);
             }
+
+            // Recompute how closely this bot needs to be simulated. Doing it after the turn
+            // means a bot that just launched a fleet is promoted to Full for the trip.
+            $lodClassifier->refresh($profile);
 
             $profile->last_tick_at = Date::now();
             $profile->next_action_at = $scheduler->nextActionAt($profile, $this->remainingBudget($actionsTaken));

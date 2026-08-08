@@ -4,6 +4,7 @@ namespace OGame\Bots\Activity;
 
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Date;
+use OGame\Enums\BotLod;
 use OGame\Models\BotProfile;
 
 /**
@@ -61,6 +62,13 @@ class ActivityScheduler
 
         $localNow = $profile->localNow();
         $gap = $this->averageSessionGapMinutes($profile, $localNow);
+
+        // A bot nowhere near a human is simulated far less often. This changes only how often it
+        // takes a turn, never what its account contains: whenever it does run, or the moment a
+        // human looks at it, the synchroniser catches it up from its last update.
+        if ($profile->lod === BotLod::Abstract) {
+            $gap *= (float) config('bots.tick.abstract_gap_multiplier', 6.0);
+        }
 
         // Spread the gap by +/-40% so sessions are not evenly spaced through the day.
         $minutes = (int) round($gap * (random_int(60, 140) / 100));

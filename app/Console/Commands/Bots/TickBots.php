@@ -5,11 +5,15 @@ namespace OGame\Console\Commands\Bots;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use OGame\Bots\Support\ReadsScalarOptions;
 use OGame\Enums\BotPersona;
 use OGame\Jobs\BotTickJob;
 use OGame\Models\BotProfile;
+use Throwable;
 
 /**
  * Wakes up whichever bots are due to act.
@@ -47,6 +51,24 @@ class TickBots extends Command
             return $this->tickSingle($userOption);
         }
 
+        // A paused server keeps its bots but stops giving them turns. Unlike BOTS_ENABLED this
+        // needs no deploy, which is what makes it usable when something is going wrong.
+        if (Cache::get('bots:paused', false)) {
+            return self::SUCCESS;
+        }
+
+        // Skip the sweep entirely when the worker is already behind. Queuing more turns would
+        // only make them staler by the time they run, and a backlog that never drains is worse
+        // than a few missed sessions.
+        $backlog = $this->queueBacklog();
+        $maxBacklog = (int) config('bots.tick.max_queue_backlog', 500);
+
+        if ($maxBacklog > 0 && $backlog > $maxBacklog) {
+            Log::warning(sprintf('Skipping bot sweep: %d jobs already queued (limit %d).', $backlog, $maxBacklog));
+
+            return self::SUCCESS;
+        }
+
         $limit = $this->intOption('limit') ?? (int) config('bots.tick.max_bots_per_sweep', 60);
 
         $due = BotProfile::query()
@@ -66,6 +88,7 @@ class TickBots extends Command
         }
 
         $queue = (string) config('bots.tick.queue', 'bots');
+        $startedAt = microtime(true);
 
         foreach ($due as $userId) {
             $job = new BotTickJob((int) $userId);
@@ -77,9 +100,40 @@ class TickBots extends Command
             }
         }
 
-        $this->line(sprintf('Dispatched %d bot turn(s).', $due->count()), 'info', 'v');
+        $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);
+
+        // Kept where an operator can find it. A sweep that starts taking seconds, or that keeps
+        // hitting the limit, is the first sign the population has outgrown the worker.
+        Cache::put('bots:last_sweep', [
+            'at' => Date::now()->toDateTimeString(),
+            'dispatched' => $due->count(),
+            'backlog' => $backlog,
+            'elapsed_ms' => $elapsedMs,
+        ], 3600);
+
+        $this->line(sprintf('Dispatched %d bot turn(s) in %dms.', $due->count(), $elapsedMs), 'info', 'v');
 
         return self::SUCCESS;
+    }
+
+    /**
+     * How many bot turns are already waiting to run.
+     */
+    private function queueBacklog(): int
+    {
+        // Only the database queue driver can be inspected cheaply; anything else reports zero
+        // rather than guessing, which disables backpressure instead of misapplying it.
+        if (config('queue.default') !== 'database') {
+            return 0;
+        }
+
+        try {
+            return (int) DB::table((string) config('queue.connections.database.table', 'jobs'))
+                ->where('queue', (string) config('bots.tick.queue', 'bots'))
+                ->count();
+        } catch (Throwable) {
+            return 0;
+        }
     }
 
     /**

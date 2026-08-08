@@ -7,6 +7,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Log;
+use OGame\Bots\Scale\BotMaterialiser;
 use OGame\Facades\AppUtil;
 use OGame\Factories\PlanetServiceFactory;
 use OGame\Models\Alliance;
@@ -99,6 +100,12 @@ class GalaxyController extends OGameController
     {
         $this->playerService = $player;
         $this->planetServiceFactory = $planetServiceFactory;
+
+        // Bring any NPCs in this system up to date before reading their planets. Distant bots
+        // take a turn only every few hours, so without this a human would see resource figures
+        // and fleets from whenever the bot last acted. Same lazy-update idea the GlobalGame
+        // middleware applies to humans, just from the observer's side.
+        resolve(BotMaterialiser::class)->materialiseSystem($galaxy, $system);
 
         // Retrieve all planets from this galaxy and system.
         $planet_list = Planet::where([

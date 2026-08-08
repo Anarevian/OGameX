@@ -141,6 +141,15 @@ return [
         'max_bots_per_sweep' => (int) env('BOTS_MAX_PER_SWEEP', 60),
         'queue' => env('BOTS_QUEUE', 'bots'),
         'lock_seconds' => 120,
+
+        // How much less often a bot outside any human's observation radius takes a turn.
+        // Cadence only: its account is still brought fully up to date whenever it does run, or
+        // the instant a human looks at it.
+        'abstract_gap_multiplier' => (float) env('BOTS_ABSTRACT_GAP_MULTIPLIER', 6.0),
+
+        // Skip a sweep entirely when the bots queue is already this far behind, so a slow worker
+        // cannot accumulate an unbounded backlog of turns that are stale by the time they run.
+        'max_queue_backlog' => (int) env('BOTS_MAX_QUEUE_BACKLOG', 500),
     ],
 
     /*

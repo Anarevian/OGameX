@@ -16,7 +16,7 @@ tracks what is actually built, what is verified, and what is known to be wrong o
 | 2 — Movement and war | Fleet dispatch, espionage, raiding, fleetsave, recovery | **Built.** Expedition, espionage, intel writing, raiding with fairness caps, fleetsave, transport, colonisation and recycling, all tested. Post-battle recovery (rebuilding defence, revenge) is the one piece left, and it belongs with Phase 3's memory work. |
 | 3 — Perception and memory | Intel decay, grudges, skill-scaled mistakes | **Mostly built.** Intel decay, battle observation, grudges with decay, grudge-weighted targeting and re-scouting of stale intel are in and tested. Phalanx as an intel source and post-battle rebuilding are not. |
 | 4 — Alliances | Founding, invites, ACS, buddy handling. No messaging (decision §13.4). | **Mostly built.** Founding, applying, attitude-driven application and buddy handling, and the positive side of attitude are in and tested, including a direct assertion of the silence invariant. ACS between allied bots is not. |
-| 5 — Scale | LOD classification, abstract economy, lazy materialisation, backpressure | Not started. |
+| 5 — Scale | LOD classification, abstract economy, lazy materialisation, backpressure | **Built.** Measured at 300 bots, see §7. |
 | 6 — Tooling | Admin panel, simulation harness, inspect command, docs | Not started. |
 
 ---
@@ -38,6 +38,7 @@ checks below were actually executed.
 | Phase 2 tests | `./vendor/bin/phpunit --filter BotFleetTest` | **Pass** — 8 tests |
 | Phase 3 tests | `./vendor/bin/phpunit --filter BotMemoryTest` | **Pass** — 7 tests |
 | Phase 4 tests | `./vendor/bin/phpunit --filter BotSocialTest` | **Pass** — 5 tests |
+| Phase 5 tests | `./vendor/bin/phpunit --filter BotScaleTest` | **Pass** — 7 tests |
 
 ### How the environment was made to work
 
@@ -248,3 +249,51 @@ docker compose exec ogamex-app php artisan ogamex:bots:tick --user=<id>
 - `bot_action_log` records every decision including failures, with the score and the reasoning
   string. A failed row means the bot proposed something the game rejected, which is the main
   signal that an action class is proposing illegal moves.
+
+---
+
+## 7. Measured performance
+
+Taken on the dev container with 300 spawned bots and no human players, so every bot classified as
+Abstract. Numbers are indicative, not a benchmark, but they are real.
+
+| Operation | Cost |
+|---|---|
+| Spawn 300 bots | 114s (~380ms each, developed) |
+| Classify all 300 for LOD | 1.2s (~4ms each) |
+| One sweep (selection + dispatch) | **81ms, 64 queries** |
+| One real turn (sync + brain + reschedule) | **~1.0s** |
+| Materialise a system on a galaxy view | **1–25ms** (was 820ms before bounding) |
+
+### What these mean
+
+**The sweep is cheap and stays cheap.** It only selects due bots and queues one job each, so it
+does not grow with how much work the bots have to do.
+
+**A turn costs about a second**, almost all of it in `PlanetService::update()`, which is a locked
+transaction per planet. That is the number that matters, and it bounds the population:
+
+- In steady state a bot takes roughly 3–8 turns a day, so 300 bots is around 1,500 turns a day —
+  about 25 minutes of worker CPU spread over 24 hours. Comfortable.
+- The dangerous case is a **thundering herd**: after downtime every bot is overdue at once, and
+  300 turns is 300 seconds of work. `max_bots_per_sweep` (default 60) is what stops that becoming
+  a backlog — it drains over about five minutes instead of all at once.
+- At 500+ bots, raise `BOTS_ABSTRACT_GAP_MULTIPLIER` before raising the sweep limit. Ticking
+  distant bots less often is free; ticking more of them per minute is not.
+
+**Materialisation was the one genuine problem this phase found.** It runs inside a human's page
+request, and unbounded it added 820ms to a galaxy view of a bot-heavy system. Now it skips bots
+that ticked in the last 10 minutes and synchronises at most 4 per request, which brought it to
+1–25ms. A system with more stale bots than that catches up on the next view.
+
+### Operating it
+
+```bash
+php artisan ogamex:bots:pause            # stop turns now, no deploy, lifts after 24h
+php artisan ogamex:bots:pause --resume
+php artisan ogamex:bots:pause --status   # paused? plus last sweep timing and queue backlog
+```
+
+The sweep also refuses to run when the `bots` queue is more than `BOTS_MAX_QUEUE_BACKLOG` deep
+(default 500), because queuing turns that will be stale by the time they run is worse than
+skipping a session.
