@@ -8,6 +8,9 @@ use OGame\Bots\Perception\BotMemoryService;
 use OGame\Bots\Social\BotSocialService;
 use OGame\Factories\PlayerServiceFactory;
 use OGame\Models\Alliance;
+use OGame\Models\AllianceApplication;
+use OGame\Models\AllianceMember;
+use OGame\Models\AllianceRank;
 use OGame\Models\BotActionLog;
 use OGame\Models\BotProfile;
 use OGame\Models\ChatMessage;
@@ -45,6 +48,24 @@ class BotSocialTest extends TestCase
         foreach (BotProfile::pluck('user_id') as $userId) {
             $factory->make((int) $userId, true)->delete();
         }
+
+        $this->removeStrayAlliances();
+    }
+
+    /**
+     * Clear alliances left behind by this suite.
+     *
+     * Deleting a bot removes the account but not the alliance it founded, and a leftover open
+     * alliance changes what AllianceAction proposes in every other suite that runs afterwards.
+     * The suites pass individually and failed together without this.
+     */
+    private function removeStrayAlliances(): void
+    {
+        AllianceMember::query()->delete();
+        AllianceApplication::query()->delete();
+        AllianceRank::query()->delete();
+        Alliance::query()->delete();
+        User::query()->whereNotNull('alliance_id')->update(['alliance_id' => null]);
     }
 
     private function spawnOne(string $persona = 'miner'): BotProfile

@@ -38,6 +38,11 @@ class TransportAction implements BotAction
      */
     private const OVERFLOW_THRESHOLD = 0.75;
 
+    /**
+     * Ceiling this action saturates towards, matching every other scorer.
+     */
+    private const MAX_SCORE = 3.0;
+
     public function __construct(private readonly BotFleetService $fleetService)
     {
     }
@@ -84,8 +89,11 @@ class TransportAction implements BotAction
             return [];
         }
 
-        // The fuller the source, the more urgent: production above the storage cap is thrown away.
-        $score = 0.8 + (2.0 * $fillRatio);
+        // The fuller the source, the more urgent: production above the storage cap is thrown
+        // away. Capped at the same ceiling every other action saturates towards - a seven-day
+        // simulation showed transport averaging 5.42 against building's 2.51, which meant it won
+        // every slot it was offered in. See the scoring rule in docs/npc-status.md section 4a.
+        $score = min(self::MAX_SCORE, 0.8 + (1.6 * $fillRatio));
 
         return [
             new ActionCandidate(

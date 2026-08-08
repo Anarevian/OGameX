@@ -212,6 +212,15 @@ If you want to upgrade an existing installation of OGameX to a new version, foll
   ```
   > When the docker containers are started, the entrypoint script in `./docker/entrypoint.sh` will automatically run the appropriate laravel install commands to upgrade the database schema and refresh the cache. Note that depending on the migrations this might take a short while. After the containers are started, you can visit the application at `https://localhost` (or http://localhost) to check if the upgrade was successful. If you run into any issues, please check the logs for more information or open an issue on GitHub.
 
+### NPC players
+This fork can populate the universe with computer-controlled accounts that play through the same
+game services a human does, so a server with a handful of real players still feels inhabited. They
+are openly marked with an `NPC` badge in the galaxy view and the highscores.
+
+See [docs/npc-guide.md](docs/npc-guide.md) to get started. In short: set `BOTS_ENABLED=true`, run
+the migrations, register your own account, then `php artisan ogamex:bots:spawn --count=20`.
+Enabling on its own creates nothing.
+
 ### Assigning admin role
 By default, the first registered user is assigned the admin role which can see the admin bar and is able to change server settings. You can also assign the admin role manually via the command line:
   ```

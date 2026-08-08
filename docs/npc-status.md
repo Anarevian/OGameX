@@ -17,7 +17,7 @@ tracks what is actually built, what is verified, and what is known to be wrong o
 | 3 — Perception and memory | Intel decay, grudges, skill-scaled mistakes | **Mostly built.** Intel decay, battle observation, grudges with decay, grudge-weighted targeting and re-scouting of stale intel are in and tested. Phalanx as an intel source and post-battle rebuilding are not. |
 | 4 — Alliances | Founding, invites, ACS, buddy handling. No messaging (decision §13.4). | **Mostly built.** Founding, applying, attitude-driven application and buddy handling, and the positive side of attitude are in and tested, including a direct assertion of the silence invariant. ACS between allied bots is not. |
 | 5 — Scale | LOD classification, abstract economy, lazy materialisation, backpressure | **Built.** Measured at 300 bots, see §7. |
-| 6 — Tooling | Admin panel, simulation harness, inspect command, docs | Not started. |
+| 6 — Tooling | Admin panel, simulation harness, inspect command, docs | **Mostly built.** `ogamex:bots:simulate`, `ogamex:bots:inspect`, `ogamex:bots:pause` and the operator guide are done. The admin panel UI is not; the console tools cover the same ground. |
 
 ---
 
@@ -88,6 +88,9 @@ later phases.
 | 17 | `testSpawnedProgressionSatisfiesRequirements` was **passing vacuously**: it only asserted a research lab existed *if* the bot had research, and research was always zero, so the assertion never ran. It is what should have caught #16. | Asserts the tech row is populated first, so the check can never go hollow again. |
 | 18 | **Research scores were an order of magnitude too large.** `interest * (20000 / cost)` is unbounded as cost falls, so a cheap early technology scored in the hundreds against everything else's 0–3. | Saturated to `interest * 2 * (20000 / (cost + 20000))`. |
 | 19 | **Mine scores were unbounded too.** `24 / payback` reached 17 for a level-1 colony mine, so building beat every fleet, research and expedition candidate and the bot did nothing else. | Saturated to `3 * (24 / (payback + 24))`, same ordering, bounded range. Energy and storage scores capped to match. |
+| 24 | **The bot suites passed individually but failed together.** BotSocialTest founds alliances, and deleting a bot removes the account but not the alliance it founded, so a leftover open alliance changed what AllianceAction proposed in every suite that ran afterwards. | The social suite clears alliances, members, applications and ranks in its teardown. Worth remembering: the suite does not roll back between tests, so anything a test creates outside the bot tables has to be cleaned up by hand. |
+| 22 | **The simulation harness poisoned its own schedule.** It advances the clock, so at the end every NPC was scheduled days ahead in simulated time — against the restored clock that meant nothing was due again for as long as the simulation ran. A second run reported zero decisions, and on a real server the population would have sat frozen. | The command re-anchors every schedule to the present when it finishes. |
+| 23 | **Transport scored 5.42 on average against building's 2.51**, so it won every slot it was offered in and took 20% of all decisions. The same scale violation as defects 18–20, found by the harness rather than by reading. | Capped to the shared 3.0 ceiling. Average fell to 1.96 and its share to 11.5%. |
 | 20 | Even with comparable scales the brain took the argmax every step, and a multi-planet empire always has another cheap building available, so one category still won every slot. A bot spending all ten actions on the same button is worse at the game and obviously not a person. | Per-session category fatigue in `BotBrain`: a category's score is divided by `1 + 0.6 × actions already spent on it` this session. An explorer went from 100% buildings to 44 buildings / 26 expeditions / 2 research. |
 | 21 | **A bot starting from nothing locked itself out of most of the game.** Building from zero for ten simulated days produced mine level 19 and 2.9M unspent metal, with `robot_factory`, `research_lab` and `shipyard` all still at 0 — so no research, no ships, no defence, ever. A mine upgrade always out-scored an incremental infrastructure one, and both sat in the `economy` category so session fatigue scaled them together and never changed the ordering. | The first level of a gateway building (robot factory, research lab, shipyard) now scores 2.6, because it unlocks a whole branch rather than being an incremental gain; and infrastructure has its own scoring category so fatigue can tell it apart from mines. The same bot now reaches robot factory 10, research lab 8, shipyard 9 and energy technology 5. |
 
@@ -297,3 +300,40 @@ php artisan ogamex:bots:pause --status   # paused? plus last sweep timing and qu
 The sweep also refuses to run when the `bots` queue is more than `BOTS_MAX_QUEUE_BACKLOG` deep
 (default 500), because queuing turns that will be stale by the time they run is worse than
 skipping a session.
+
+---
+
+## 8. What the simulation harness found
+
+First real use of `ogamex:bots:simulate`, over 24 mixed NPCs. It paid for itself immediately by
+finding two defects (22 and 23 above) that no amount of reading had caught.
+
+After fixing those, three simulated days produced:
+
+```
+Action mix          build_building 59%  transport 12%  expedition 11%
+                    build_defence 7%  espionage 5%  research 4%  build_ships 2%
+Failed actions      0 of 330
+```
+
+**Persona divergence, as share of each persona's own decisions:**
+
+| Persona | building | defence | ships | espionage | expedition | transport |
+|---|---|---|---|---|---|---|
+| casual | 52% | 4% | 4% | 12% | 12% | – |
+| explorer | 61% | – | – | 7% | **21%** | 6% |
+| miner | 62% | 7% | 1% | – | 11% | **15%** |
+| raider | 43% | – | **22%** | **30%** | – | – |
+| turtle | 60% | **16%** | – | – | 3% | 19% |
+
+That is the property the whole design was aiming at, and it is now visible rather than asserted:
+a raider scouts and builds warships and never runs an expedition; a turtle builds defence nobody
+else does; an explorer runs expeditions; a miner moves resources between planets. Nothing in the
+code says "raiders scout" — it falls out of the persona weights and the utility scoring.
+
+Activity across the 24 hours has real peaks and troughs rather than a flat line, confirming the
+timezone and waking-hour model works.
+
+**Read the harness with `--step=1`.** Larger steps alias the hourly histogram: the clock jumps in
+whole steps, so only every Nth hour can contain a decision and the gaps look like sleeping NPCs
+when they are an artefact of sampling. The command now says so in its own output.
