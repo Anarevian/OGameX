@@ -1,9 +1,13 @@
 # Player-like NPCs ("Bot Players") — Design & Implementation Plan
 
-**Status:** Proposal / plan. No code written yet.
+**Status:** Proposal / plan. No code written yet. Scope decisions settled — see §13.
 **Goal:** Let a server with a handful of real players feel like a populated universe, by adding
-persistent AI accounts that build, research, expand, scout, trade, talk and fight using the *same*
+persistent AI accounts that build, research, expand, scout, trade and fight using the *same*
 game rules as humans — with distinct, recognisable playstyles.
+
+Bots are **openly marked in-game** (§13.1) and **do not send messages or chat** (§13.4). Believability
+therefore does not mean concealment: it means that an account a player *knows* is a bot still behaves
+like a person when they look closely at it.
 
 ---
 
@@ -13,13 +17,13 @@ A bot is "done" when all of these hold:
 
 | Criterion | Test |
 |---|---|
-| **Indistinguishable at a glance** | A human browsing galaxy view / highscores / messages cannot tell which accounts are bots without being told. |
+| **Plausible under scrutiny** | A human who inspects a bot's growth curve, login rhythm, fleet movements and battle history sees nothing that reads as scripted — no clockwork intervals, no perfect play, no 24/7 activity. |
 | **Plays by the rules** | Every bot action goes through the same services a controller calls. No resource injection, no omniscient targeting, no illegal builds. |
 | **Has a memory and a fog of war** | A bot only acts on information it could have obtained in-game (espionage reports, galaxy view, battle reports). It makes decisions on stale intel and is sometimes wrong. |
 | **Has a schedule** | Bots sleep, take breaks, go on holiday, and some quit forever. Actions are bursty, not uniform. |
 | **Distinct playstyles** | Given two bots of different personas, their build order, fleet composition, aggression and mistakes are visibly different over a week. |
 | **Fair** | A new human player is never farmed into quitting. Aggression toward humans is capped and configurable. |
-| **Scales** | 500 bots across 3 planets each cost less than a few seconds of CPU per minute on the dev docker stack. |
+| **Scales** | The default population (200 bots, configurable) costs well under a second of CPU per minute on the dev docker stack, and 500+ remains viable. |
 | **Reversible** | One server setting disables the whole system; one command removes all bots cleanly. |
 
 ---
@@ -133,12 +137,11 @@ app/Bots/
   Actions/             one class per action type (BuildAction, ResearchAction, RaidAction, …)
   Perception/          BotPerception, IntelStore, target discovery
   Activity/            ActivityProfile (sleep/wake/holiday/quit), jitter
-  Social/              message + chat + alliance behaviour, phrase banks
+  Social/              alliance behaviour only (no messaging — see §13.4)
   Support/             BotSynchroniser, BotLock, decision logging
 app/Console/Commands/Bots/    tick, spawn, despawn, simulate, inspect, pause
 app/Models/Bot*.php           BotProfile, BotIntel, BotMemory, BotActionLog
 config/bots.php               global tunables + persona registry
-resources/lang/*/bots.php     phrase banks for bot-authored messages
 ```
 
 ### 3.2 Database
@@ -206,7 +209,7 @@ harness (§11.2).
 ## 5. Playstyle catalogue
 
 Each persona is a config object: class preference, weight vector, build-order bias, activity profile,
-skill, aggression, risk tolerance, social tone, and a naming flavour.
+skill, aggression, risk tolerance, alliance sociability, and a naming flavour.
 
 | Persona | Class | Behaviour | Role in the universe |
 |---|---|---|---|
@@ -254,14 +257,21 @@ This is the list that separates "a script that builds mines" from "an account yo
 - [ ] Bots occasionally cancel or re-order their own queue (visible as human indecision).
 - [ ] Bots lose fleets and *recover* — rebuild, harvest their own debris, repair from the wreck field.
 
-### 6.4 Social presence
-- [ ] Template-driven messages with per-persona tone and multiple phrasings per intent (phrase banks in `resources/lang/*/bots.php`, so they are translated like the rest of the game).
-- [ ] Intents: reply to an incoming message, warn/taunt after being spied, threaten after being attacked, propose a truce, recruit to alliance, thank an ally, decline politely, occasional idle chat-channel line.
-- [ ] Reply latency matches the bot's activity profile — no instant replies.
-- [ ] Bots ignore some messages entirely (people do).
-- [ ] Alliances: bots found alliances, invite each other, accept human applications, run ACS defends with `FleetUnionService`, and leave alliances after conflicts.
-- [ ] `bot_memory` gives grudges and friendships continuity: a bot that was farmed remembers who did it.
-- [ ] *(Optional, off by default)* An LLM-backed phrasing provider behind an interface, so a server owner with an API key gets richer dialogue while the default install stays deterministic and dependency-free. Tests always use the template provider.
+### 6.4 Social presence — actions only, no words
+
+Bots are **silent** (§13.4): they never send messages and never post in chat, in either direction.
+A human who writes to a bot gets no reply. Since bots are openly marked, this is an accepted and
+visible limitation rather than a tell to be hidden. Everything social is therefore expressed through
+*behaviour* instead of text:
+
+- [ ] Alliances: bots found alliances, invite each other, accept or reject human applications, and leave alliances after conflicts — all through `AllianceService`, with no accompanying messages.
+- [ ] ACS defends and joint attacks between allied bots via `FleetUnionService`.
+- [ ] `bot_memory` gives grudges and friendships continuity: a bot that was farmed remembers who did it and expresses that by attacking back, refusing an alliance application, or joining an ally's ACS against them.
+- [ ] Buddy requests from humans are accepted or ignored according to persona and attitude (`BuddyService`), which is a social signal that needs no prose.
+- [ ] Whatever notification messages the *engine* generates on a bot's behalf (fleet arrival, battle reports, alliance events) still flow normally — those are system messages, not bot-authored text.
+
+> If you later want bots to talk, the hook is a `PhraseProvider` interface plus phrase banks in
+> `resources/lang/*/bots.php`. Not building it now; noted so the seam is left in the right place.
 
 ### 6.5 Military behaviour
 - [ ] Targeting from intel: expected loot, distance/deut cost, defence estimate, grudges, cooldowns.
@@ -293,9 +303,14 @@ server settings, editable in the admin panel:
 
 ## 8. Scale and performance
 
+Population is a config value (`bots.population`), **defaulting to 200**, so a server owner can scale
+from a quiet 50 to a full 500+ without code changes. The LOD work below is built regardless of the
+starting number, so raising the setting later needs no rework.
+
 Measured costs: each `PlanetService::update()` is a `lockForUpdate` transaction touching the building
-queue, resources, unit queue, production and storage. 500 bots × 3 planets = 1500 such transactions
-per full sweep — too much to do every minute, and pointless when nobody is watching.
+queue, resources, unit queue, production and storage. At 200 bots × ~3 planets that is ~600 such
+transactions per full sweep, and 1500 at 500 bots — too much to do every minute, and pointless when
+nobody is watching.
 
 **Level of detail (LOD), mirroring the game's own lazy-update philosophy:**
 
@@ -338,6 +353,11 @@ a `ogamex:bots:pause` kill switch; metrics logged per sweep (bots ticked, action
 6. **Bots must be excluded** from: the admin bot-detection panel, "real player count" statistics, and
    any registration/multi-account checks. They must be **included** in: highscores, galaxy view,
    alliance rankings, search.
+7. **Marking (§13.1).** A `User::isBot()` helper plus an NPC icon/badge in galaxy view and the
+   highscore table. This is the one place the feature touches core views rather than only adding
+   files — see `GalaxyController::…` player payload (which already assembles `isNewbie`/`isStrong`
+   flags for display, so the pattern exists) and the highscore views. Keep it to a single shared
+   partial so it is easy to find and revert.
 
 ---
 
@@ -349,6 +369,8 @@ Phases are independently shippable; each ends with a server that still works.
 1. `config/bots.php` with global tunables and the persona registry.
 2. Migrations: `bot_profiles`, `bot_intel`, `bot_memory`, `bot_action_log` (+ index on `next_action_at`).
 3. Models `BotProfile`, `BotIntel`, `BotMemory`, `BotActionLog` with a `User::botProfile()` relation and a `User::isBot()` helper.
+3a. **Marking:** NPC badge in galaxy view and highscores, driven by `User::isBot()`, as a single shared
+    view partial (§9.7). Ship this in Phase 0 so no bot is ever visible to a player unmarked.
 4. `BotSynchroniser` — the console-safe equivalent of `GlobalGame` (player update, per-planet update, fleet missions, planet moves), with correct `time`/`last_ip` handling.
 5. `ogamex:bots:spawn` — creates accounts + homeworlds via `PlanetServiceFactory`, backdated `created_at`, persona assignment from a `--mix`, name generation. Modelled on `PreviewSeedUsers`.
 6. `ogamex:bots:despawn` — clean removal (`PlayerService::delete()` + profile rows), with `--persona` / `--all` filters.
@@ -380,13 +402,14 @@ Phases are independently shippable; each ends with a server that still works.
 26. Skill model: per-persona error injection across all action types.
 27. Tests: assert a bot with only stale intel attacks into a defence it did not know about, and that a high-skill bot re-scouts first.
 
-### Phase 4 — Social
-28. Phrase banks in `resources/lang/*/bots.php`; `PhraseProvider` interface with a template implementation.
-29. `MessageAction`: reply / taunt / warn / negotiate / recruit, with human latency and a realistic ignore rate.
-30. `ChatAction`: occasional channel presence.
-31. Alliance behaviour: found, invite, accept human applications, ACS defend/attack via `FleetUnionService`, leave after conflict.
-32. *(Optional)* `LlmPhraseProvider` behind the same interface, disabled by default, documented as opt-in with its own API-key setting.
-33. Tests: message intents produce varied, translated output; alliance lifecycle works; no message is sent while the bot is asleep.
+### Phase 4 — Alliances (no messaging)
+Substantially smaller than originally scoped, because bots are silent (§13.4).
+28. Alliance behaviour: found, invite other bots, accept/reject human applications, leave after conflict — via `AllianceService`, attitude-driven from `bot_memory`.
+29. ACS defend and joint attack between allied bots via `FleetUnionService`.
+30. Buddy request handling (`BuddyService`): accept or ignore by persona and attitude.
+31. Assert the silence invariant in code and tests: no code path lets a bot create a `Message` or `ChatMessage`. Leave the `PhraseProvider` seam unimplemented but documented.
+32. Tests: alliance lifecycle works end to end; a grudge in `bot_memory` causes an application rejection and an ACS join against the offender; a human message to a bot produces no reply and no error.
+33. *(Freed capacity)* Steps saved here are best spent on Phase 3 tuning and the simulation harness (step 41), which is where believability is actually won.
 
 ### Phase 5 — Scale
 34. LOD classification (Full/Abstract/Dormant) with an observation-radius calculation.
@@ -427,21 +450,33 @@ Phases are independently shippable; each ends with a server that still works.
 | Bots feel robotic despite the effort | Rhythm (§6.2) and mistakes (§6.3) matter more than smart play. Prioritise them over optimisation quality. |
 | Performance collapse at scale | LOD + lazy materialisation from Phase 5; measure before setting defaults. |
 | Bots bully the humans the server exists for | Fairness caps (§7) implemented in Phase 2, not deferred. |
-| Divergence from upstream OGameX | Keep everything additive under `app/Bots/`, behind a feature flag, with no signature changes to core services. |
+| Merge conflicts pulling from upstream OGameX | Private fork, so core files *may* be touched — but keep it additive under `app/Bots/` wherever that costs nothing, and confine unavoidable core edits (the NPC badge, bot-detection exclusion) to small, clearly-marked partials so `git pull` conflicts stay trivial. |
 | Naming/concept confusion with expedition NPCs | Distinct `Bots` namespace and vocabulary from day one. |
-| Players feel deceived | Decide the labelling policy explicitly (§13). |
+| Silence is noticeable | A human writing to a bot gets nothing back. Accepted: bots are marked, so this reads as "it's an NPC" rather than as a broken player. Revisit via the `PhraseProvider` seam if it grates. |
+| Marked bots get treated as scenery | Uncapped highscores plus real fog-of-war behaviour (Phase 3) keep them worth engaging with rather than just farming. |
 
 ---
 
-## 13. Open decisions — input needed
+## 13. Decisions taken
 
-1. **Labelling.** Are bots disclosed in-game (an icon in galaxy/highscore, or a note in the server
-   rules), or invisible? Recommendation: a server setting, defaulting to *disclosed in the server
-   rules but not marked in the UI* — honest without breaking immersion.
-2. **Highscore participation.** Should bots occupy the top ranks, or be capped below the best human?
-   Recommendation: uncapped — a rival at the top is the point — but make it a setting.
-3. **Target population.** How many bots, and what mix? This drives the LOD work in Phase 5.
-4. **Chat and messages.** Should bots initiate contact with humans, or only respond?
-5. **LLM dialogue.** Worth the optional integration (step 32), or keep everything template-based?
-6. **Upstream.** Is this intended for the public OGameX repo, or a private fork? It affects how
-   defensively the code must avoid touching core files.
+1. **Labelling — bots are marked in-game.** An NPC badge next to bot names in galaxy view and the
+   highscore table (§9.7, step 3a). Shipped in Phase 0 so a bot is never visible to a player
+   unmarked. Consequence: the goal is *plausible*, not *undetectable* — which is why §6.2 (rhythm)
+   and §6.3 (fog of war and mistakes) still carry the whole feature.
+2. **Highscores — uncapped.** Bots progress freely and may hold #1. Exposed as a server setting so
+   it can be revisited without code changes.
+3. **Population — configurable, default 200.** `bots.population` in `config/bots.php`, with the
+   default persona mix from §5. The LOD work in Phase 5 is built regardless of the starting number,
+   so scaling to 500+ later is a settings change.
+4. **Bots are silent.** No bot-authored messages and no chat, in either direction; a human writing to
+   a bot gets no reply. Phase 4 shrinks to alliance and buddy mechanics (§6.4). The `PhraseProvider`
+   seam is documented but not implemented, so this is reversible later.
+5. **No LLM integration.** Moot given (4) — there is no dialogue to generate. All behaviour stays
+   deterministic and testable, with no external API dependency.
+6. **Private fork, upstream-quality standards.** Core files may be edited where that is genuinely
+   simpler, but the code still targets the project's CI bar: PHPStan clean, Pint-formatted, and
+   covered by tests (step 45). Additive-under-`app/Bots/` remains the default wherever it costs
+   nothing, and unavoidable core edits are kept to small marked partials to keep upstream pulls cheap.
+7. **Full behavioural realism retained.** Phase 3 (perception, intel decay, memory, skill-scaled
+   mistakes) is built in full despite the marking decision. Marking tells a player *that* an account
+   is a bot; it does not make an omniscient one interesting to play against.
