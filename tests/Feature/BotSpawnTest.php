@@ -120,13 +120,19 @@ class BotSpawnTest extends TestCase
                 }
             }
 
-            if ($hasResearch) {
-                $this->assertGreaterThanOrEqual(
-                    1,
-                    $planet->research_lab,
-                    'A bot with researched technology must own a research lab.'
-                );
-            }
+            // Guard against the assertion below going vacuous: a bot whose tech row was never
+            // populated would silently satisfy every requirement check.
+            $this->assertTrue(
+                $hasResearch,
+                'A spawned bot must have researched technology; an empty tech row means the '
+                . 'progression never reached the users_tech record.'
+            );
+
+            $this->assertGreaterThanOrEqual(
+                1,
+                $planet->research_lab,
+                'A bot with researched technology must own a research lab.'
+            );
         }
     }
 

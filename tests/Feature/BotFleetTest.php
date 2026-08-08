@@ -67,12 +67,6 @@ class BotFleetTest extends TestCase
      */
     public function testBotsDispatchFleetMissions(): void
     {
-        // Known open issue, see docs/npc-status.md section 3: an Explorer spawns with
-        // astrophysics 0 despite the persona tech_floor, so ExpeditionAction never proposes and
-        // no fleet leaves the planet. Skipped rather than deleted so the gap stays visible.
-        $this->markTestSkipped('Blocked by the astrophysics tech_floor issue tracked in docs/npc-status.md.');
-
-        // @phpstan-ignore-next-line deadCode.unreachable
         $profile = $this->spawnOne('explorer');
 
         for ($i = 0; $i < 12; $i++) {

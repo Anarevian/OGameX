@@ -57,6 +57,14 @@ class BuildBuildingAction implements BotAction
      */
     private const VALUE = ['metal' => 1.0, 'crystal' => 2.0, 'deuterium' => 3.0];
 
+    /**
+     * Ceiling every scorer in this class saturates towards.
+     *
+     * All actions must produce comparable numbers or the brain stops being a ranking and becomes
+     * a fixed priority list: whichever class happens to emit the largest magnitude always wins.
+     */
+    private const MAX_SCORE = 3.0;
+
     public function __construct(private readonly BuildingQueueService $buildingQueueService)
     {
     }
@@ -142,9 +150,6 @@ class BuildBuildingAction implements BotAction
 
         $paybackHours = $cost / $gainPerHour;
 
-        // Score falls off as payback grows: 24h payback scores 1.0, 240h scores 0.1, so a slow
-        // upgrade naturally loses to a fast one without needing a cutoff.
-        //
         // The cutoff is deliberately generous rather than tight. A tight one starves a developed
         // account: once its cheap colony mines are done, every remaining upgrade is expensive, and
         // a bot that refuses all of them plateaus with millions of unspent metal sitting on the
@@ -153,7 +158,12 @@ class BuildBuildingAction implements BotAction
             return null;
         }
 
-        $score = 24 / $paybackHours;
+        // Saturating rather than dividing. A raw 24/payback is unbounded as payback shrinks: a
+        // level-1 mine on a fresh colony pays back in about an hour and scored 17, which beat
+        // every fleet, research and expedition candidate the bot had, so it did nothing but
+        // build. Saturation keeps the same ordering — faster payback still wins — on the same
+        // 0..3 scale every other action produces.
+        $score = self::MAX_SCORE * (24 / ($paybackHours + 24));
 
         return new ActionCandidate(
             action: 'build_building',
@@ -180,7 +190,9 @@ class BuildBuildingAction implements BotAction
         // A planet in energy deficit runs every mine at reduced output, so fixing it is worth
         // more than any single mine upgrade. Below zero the urgency scales with the shortfall.
         if ($available < 0) {
-            $score = 3.0 + min(5.0, abs($available) / 500);
+            // An energy deficit scales the planet's whole production down, so it belongs at the
+            // top of the range — but bounded, like everything else.
+            $score = 2.5 + min(1.5, abs($available) / 1000);
             $reason = sprintf('%s %d, energy deficit %d', $machineName, $level + 1, (int) $available);
         } elseif ($available < 50) {
             // Nearly out: build ahead of the next mine upgrade rather than after it.
@@ -228,7 +240,7 @@ class BuildBuildingAction implements BotAction
             return null;
         }
 
-        $score = $fillRatio >= 0.98 ? 4.0 : 1.2 + (2.0 * $fillRatio);
+        $score = $fillRatio >= 0.98 ? self::MAX_SCORE : 1.2 + (1.5 * $fillRatio);
 
         return new ActionCandidate(
             action: 'build_building',

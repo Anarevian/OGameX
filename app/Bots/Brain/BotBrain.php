@@ -73,16 +73,21 @@ class BotBrain
 
         $executed = 0;
 
+        // How many actions this session has already spent on each category.
+        $spentPerCategory = [];
+
         // Re-propose after every action rather than picking a batch up front: executing one
         // candidate spends resources and changes what is possible, so a batch chosen in advance
         // would mostly consist of things the bot can no longer afford.
         for ($step = 0; $step < $budget; $step++) {
             $context = new BotContext($player, $profile, $stance, $tickId);
 
-            $best = $this->bestCandidate($context);
+            $best = $this->bestCandidate($context, $spentPerCategory);
             if ($best === null) {
                 break;
             }
+
+            $spentPerCategory[$best->category] = ($spentPerCategory[$best->category] ?? 0) + 1;
 
             if ($this->execute($context, $best)) {
                 $executed++;
@@ -93,9 +98,22 @@ class BotBrain
     }
 
     /**
-     * Gather every candidate, score it and return the winner.
+     * How sharply a category's score drops after each action already spent on it this session.
+     *
+     * Without this the brain is not really a ranking: it takes the argmax every step, and one
+     * category — buildings, because a multi-planet empire always has another cheap upgrade
+     * available — wins every slot forever. A bot that spends all ten of its actions clicking the
+     * same button is both worse at the game and obviously not a person. Real players do a couple
+     * of different things per login.
      */
-    private function bestCandidate(BotContext $context): ActionCandidate|null
+    private const CATEGORY_FATIGUE = 0.6;
+
+    /**
+     * Gather every candidate, score it and return the winner.
+     *
+     * @param array<string, int> $spentPerCategory Actions already taken this session, by category.
+     */
+    private function bestCandidate(BotContext $context, array $spentPerCategory = []): ActionCandidate|null
     {
         $best = null;
 
@@ -108,8 +126,13 @@ class BotBrain
             }
 
             foreach ($candidates as $candidate) {
+                $alreadySpent = $spentPerCategory[$candidate->category] ?? 0;
+                $fatigue = 1 / (1 + (self::CATEGORY_FATIGUE * $alreadySpent));
+
                 $candidate->score = $context->withNoise(
-                    $candidate->score * $context->stance->modifierFor($candidate->category)
+                    $candidate->score
+                    * $context->stance->modifierFor($candidate->category)
+                    * $fatigue
                 );
 
                 if ($best === null || $candidate->score > $best->score) {

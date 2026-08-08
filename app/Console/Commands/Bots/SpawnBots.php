@@ -358,7 +358,11 @@ class SpawnBots extends Command
      */
     private function createUserTech(User $user, array $techLevels): void
     {
-        $userTech = UserTech::create(['user_id' => $user->id]);
+        // PlayerService::load() already creates an empty tech row the first time a player is
+        // loaded, and the homeworld is created through a PlayerService. Inserting another row
+        // here would leave two: User::tech() returns the first, so every technology written to
+        // the second would be invisible and every bot would read as having no research at all.
+        $userTech = UserTech::firstOrNew(['user_id' => $user->id]);
 
         foreach ($techLevels as $machineName => $level) {
             $userTech->{$machineName} = $level;

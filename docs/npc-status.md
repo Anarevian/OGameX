@@ -13,7 +13,7 @@ tracks what is actually built, what is verified, and what is known to be wrong o
 |---|---|---|
 | 0 — Groundwork | Data model, marking, synchroniser, spawn/despawn, Docker | **Built.** Verified: see §2. |
 | 1 — Economy bot | Tick driver, activity scheduler, brain, economy actions | **Built.** Verified: see §2. |
-| 2 — Movement and war | Fleet dispatch, espionage, raiding, fleetsave, recovery | **Partly built.** Expedition, espionage, intel writing and raiding with fairness caps are in and tested (4/5). Fleetsave, transport, colonisation, recycling and post-battle recovery are not. One open error, §3.1. |
+| 2 — Movement and war | Fleet dispatch, espionage, raiding, fleetsave, recovery | **Partly built.** Expedition, espionage, intel writing and raiding with fairness caps are in and tested. Fleetsave, transport, colonisation, recycling and post-battle recovery are not. |
 | 3 — Perception and memory | Intel decay, grudges, skill-scaled mistakes | Not started (tables exist since Phase 0). |
 | 4 — Alliances | Founding, invites, ACS, buddy handling. No messaging (decision §13.4). | Not started. |
 | 5 — Scale | LOD classification, abstract economy, lazy materialisation, backpressure | Not started. |
@@ -35,7 +35,7 @@ checks below were actually executed.
 | Phase 0 tests | `./vendor/bin/phpunit --filter BotSpawnTest` | **Pass** — 12 tests, 118 assertions (~60s) |
 | Phase 1 tests | `./vendor/bin/phpunit --filter BotBrainTest` | **Pass** — 11 tests, 219 assertions (~6min) |
 | Regression | `./vendor/bin/phpunit --filter "GalaxyTest\|BootstrapTest\|AdminTest"` | **Pass** — no existing test affected |
-| Phase 2 tests | `./vendor/bin/phpunit --filter BotFleetTest` | **4 pass, 1 skipped** — the skip is the open error in §3.1 |
+| Phase 2 tests | `./vendor/bin/phpunit --filter BotFleetTest` | **Pass** — 5 tests |
 
 ### How the environment was made to work
 
@@ -57,45 +57,7 @@ Recorded because it will be needed again, and because none of it is a change to 
 
 ## 3. Open errors
 
-### 3.1 Explorer spawns with astrophysics 0, so it never runs an expedition
-
-**Status:** open. Test `BotFleetTest::testBotsDispatchFleetMissions` is skipped because of it.
-
-An Explorer is defined by running expeditions, and `ExpeditionAction` requires
-`astrophysics >= 1`. A spawned Explorer has astrophysics 0, so the action never proposes and the
-bot sends no fleets at all.
-
-A `tech_floor` of `['astrophysics' => 1]` was added to the explorer persona and applied in
-`BotProgression::techConfig()`, but a freshly spawned Explorer still reports
-`getResearchLevel('astrophysics') === 0` after `php artisan config:clear`. The floor is present
-in `config/bots.php` and the code path looks right, so the fault is somewhere between
-`techConfig()` and the `users_tech` row.
-
-**Reproduction**
-
-```
-php artisan ogamex:bots:despawn --all --force
-php artisan ogamex:bots:spawn --count=1 --persona=explorer --near-humans=0
-php artisan tinker
->>> $p = OGame\Models\BotProfile::first();
->>> app(OGame\Factories\PlayerServiceFactory::class)->make($p->user_id, true)->getResearchLevel('astrophysics');
-=> 0   // expected >= 1
-```
-
-**Next things to check, in order**
-
-1. Whether `users_tech` actually has an `astrophysics` column, and whether
-   `SpawnBots::createUserTech()`'s dynamic `$userTech->{$machineName} = $level` writes it. A
-   column that does not exist would be silently dropped rather than throwing.
-2. Whether `expandTechRequirements()` is discarding the floored entry — astrophysics requires
-   espionage technology 4 and impulse drive 3, and the expansion runs *after* the floor is applied.
-3. Whether `PlayerService::getResearchLevel()` reads the value by a different name.
-
-**Impact:** Explorers are inert — no expeditions, and with no other fleet action reachable at
-their tech level, no fleet missions at all. Raiders and Fleeters are unaffected (their tests
-pass), so this is one persona, not the fleet layer as a whole.
-
----
+None.
 
 ## 4. Fixed during development
 
@@ -119,6 +81,33 @@ later phases.
 | 13 | `assertDatabaseHas('user_tech', ...)` — the table is `users_tech`. | Corrected. |
 | 14 | Miner defence focus of 0.7 sat too close to a turtle's 1.0 for the two playstyles to read differently; the miner's larger economy let it out-build the turtle in absolute defence. | Miner defence focus lowered to 0.45, and the test now compares the *share* of decisions spent on defence rather than the raw count, which is what playstyle actually means. |
 | 15 | The log-pruning test never created an old row: `created_at` is not in `BotActionLog`'s `Fillable` list, so mass assignment dropped it and Laravel stamped "now". | Backdate after insert. |
+| 16 | **Every bot had zero research.** `PlayerService::load()` creates an empty `users_tech` row the first time a player is loaded, and the homeworld is created through a PlayerService — so `SpawnBots::createUserTech()`'s `UserTech::create()` inserted a *second* row. `User::tech()` returns the first, so every technology written was invisible. Explorers had no astrophysics and ran no expeditions; nobody had computer technology, so every bot had one fleet slot. | `UserTech::firstOrNew()`. Fleet slots went 1 → 11 and astrophysics 0 → 4 on the first spawn after the fix. |
+| 17 | `testSpawnedProgressionSatisfiesRequirements` was **passing vacuously**: it only asserted a research lab existed *if* the bot had research, and research was always zero, so the assertion never ran. It is what should have caught #16. | Asserts the tech row is populated first, so the check can never go hollow again. |
+| 18 | **Research scores were an order of magnitude too large.** `interest * (20000 / cost)` is unbounded as cost falls, so a cheap early technology scored in the hundreds against everything else's 0–3. | Saturated to `interest * 2 * (20000 / (cost + 20000))`. |
+| 19 | **Mine scores were unbounded too.** `24 / payback` reached 17 for a level-1 colony mine, so building beat every fleet, research and expedition candidate and the bot did nothing else. | Saturated to `3 * (24 / (payback + 24))`, same ordering, bounded range. Energy and storage scores capped to match. |
+| 20 | Even with comparable scales the brain took the argmax every step, and a multi-planet empire always has another cheap building available, so one category still won every slot. A bot spending all ten actions on the same button is worse at the game and obviously not a person. | Per-session category fatigue in `BotBrain`: a category's score is divided by `1 + 0.6 × actions already spent on it` this session. An explorer went from 100% buildings to 44 buildings / 26 expeditions / 2 research. |
+
+---
+
+## 4a. One rule to keep
+
+Defects 18, 19 and 20 were the same mistake three times, and it will happen again every time an
+action class is added:
+
+> **Every scorer must saturate towards the same ceiling (3.0), and no score may be an unbounded
+> ratio.** The brain is a ranking. The moment one class emits a number an order of magnitude
+> larger than the rest, it stops being a ranking and becomes a fixed priority list, and the bot
+> does one thing forever.
+
+When adding an action, print the score distribution across a few hundred decisions before
+believing it works:
+
+```sql
+SELECT action, COUNT(*), ROUND(AVG(score), 2), ROUND(MAX(score), 2)
+FROM bot_action_log GROUP BY action;
+```
+
+If one action's average is more than about double another's, the scale is wrong, not the weights.
 
 ---
 

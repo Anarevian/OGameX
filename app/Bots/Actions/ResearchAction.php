@@ -128,9 +128,13 @@ class ResearchAction implements BotAction
 
             $level = $player->getResearchLevel($machineName);
 
-            // Interest per unit of cost, normalised so a cheap early technology and an
-            // expensive late one land on a comparable scale to the building scores.
-            $score = $interest * (20000 / $cost);
+            // Interest per unit of cost, on the same 0..3 scale the other actions produce.
+            //
+            // A plain interest/cost ratio is wrong here: a cheap early technology costing a few
+            // hundred resources scored in the hundreds, which drowned out every building, ship
+            // and fleet candidate the bot had. Saturating the cost term keeps a cheap technology
+            // attractive without letting it dominate the whole decision.
+            $score = $interest * 2.0 * (20000 / ($cost + 20000));
 
             // Each level of the same technology is a little less pressing than the last.
             $score /= (1 + $level * 0.15);
