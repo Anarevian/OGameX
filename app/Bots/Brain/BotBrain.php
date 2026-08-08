@@ -3,6 +3,7 @@
 namespace OGame\Bots\Brain;
 
 use Illuminate\Support\Str;
+use OGame\Bots\Actions\AllianceAction;
 use OGame\Bots\Actions\BotAction;
 use OGame\Bots\Actions\BuildBuildingAction;
 use OGame\Bots\Actions\BuildUnitsAction;
@@ -50,6 +51,7 @@ class BotBrain
         TransportAction $transportAction,
         ColoniseAction $coloniseAction,
         RecycleAction $recycleAction,
+        AllianceAction $allianceAction,
     ) {
         $this->actions = [
             $buildBuildingAction,
@@ -62,6 +64,7 @@ class BotBrain
             $transportAction,
             $coloniseAction,
             $recycleAction,
+            $allianceAction,
         ];
     }
 

@@ -15,7 +15,7 @@ tracks what is actually built, what is verified, and what is known to be wrong o
 | 1 — Economy bot | Tick driver, activity scheduler, brain, economy actions | **Built.** Verified: see §2. |
 | 2 — Movement and war | Fleet dispatch, espionage, raiding, fleetsave, recovery | **Built.** Expedition, espionage, intel writing, raiding with fairness caps, fleetsave, transport, colonisation and recycling, all tested. Post-battle recovery (rebuilding defence, revenge) is the one piece left, and it belongs with Phase 3's memory work. |
 | 3 — Perception and memory | Intel decay, grudges, skill-scaled mistakes | **Mostly built.** Intel decay, battle observation, grudges with decay, grudge-weighted targeting and re-scouting of stale intel are in and tested. Phalanx as an intel source and post-battle rebuilding are not. |
-| 4 — Alliances | Founding, invites, ACS, buddy handling. No messaging (decision §13.4). | Not started. |
+| 4 — Alliances | Founding, invites, ACS, buddy handling. No messaging (decision §13.4). | **Mostly built.** Founding, applying, attitude-driven application and buddy handling, and the positive side of attitude are in and tested, including a direct assertion of the silence invariant. ACS between allied bots is not. |
 | 5 — Scale | LOD classification, abstract economy, lazy materialisation, backpressure | Not started. |
 | 6 — Tooling | Admin panel, simulation harness, inspect command, docs | Not started. |
 
@@ -37,6 +37,7 @@ checks below were actually executed.
 | Regression | `./vendor/bin/phpunit --filter "GalaxyTest\|BootstrapTest\|AdminTest"` | **Pass** — no existing test affected |
 | Phase 2 tests | `./vendor/bin/phpunit --filter BotFleetTest` | **Pass** — 8 tests |
 | Phase 3 tests | `./vendor/bin/phpunit --filter BotMemoryTest` | **Pass** — 7 tests |
+| Phase 4 tests | `./vendor/bin/phpunit --filter BotSocialTest` | **Pass** — 5 tests |
 
 ### How the environment was made to work
 
@@ -167,10 +168,12 @@ Things that are not bugs but are not finished either. Each needs a decision or a
   to forget: the engine does not enforce newbie protection, so those caps are the only thing that
   will protect human players.
 - **LOD is a column, not a behaviour.** `bot_profiles.lod` is written at spawn and never read.
-- **Nothing writes friendly attitudes yet.** `bot_memory` only ever moves negative: being
-  attacked and being scouted lower it, and decay pulls it back towards zero. Alliance membership,
-  answering an ACS call and accepted buddy requests should raise it, and that belongs with
-  Phase 4.
+- **ACS is not implemented.** Allied bots do not answer each other's defence calls or launch
+  joint attacks. `FleetUnionService` exists and `bot_memory` now carries the friendly attitudes
+  that would decide who answers whose call, so the remaining work is the fleet coordination
+  itself.
+- **Bots never leave an alliance.** They found and join, but nothing makes them walk out after a
+  falling-out, so alliance membership only ever grows.
 
 ---
 

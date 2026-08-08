@@ -15,6 +15,7 @@ use OGame\Bots\Brain\BotBrain;
 use OGame\Bots\Perception\BotBattleObserver;
 use OGame\Bots\Perception\BotIntelWriter;
 use OGame\Bots\Perception\BotMemoryService;
+use OGame\Bots\Social\BotSocialService;
 use OGame\Bots\Support\BotSynchroniser;
 use OGame\Factories\PlayerServiceFactory;
 use OGame\Models\BotProfile;
@@ -57,6 +58,7 @@ class BotTickJob implements ShouldQueue
         BotIntelWriter $intelWriter,
         BotBattleObserver $battleObserver,
         BotMemoryService $memoryService,
+        BotSocialService $socialService,
     ): void {
         $lockSeconds = (int) config('bots.tick.lock_seconds', 120);
 
@@ -98,6 +100,10 @@ class BotTickJob implements ShouldQueue
             // A bot only acts inside its own waking hours. Outside them the sync above still
             // ran, so its queues and fleets progressed, exactly like an offline human.
             if ($profile->isAwake() && config('bots.enabled')) {
+                // Pending applications and buddy requests are reactions, not decisions, so they
+                // are handled before the brain rather than competing for an action slot.
+                $socialService->handlePending($profile);
+
                 $budget = $scheduler->rollSessionActions($profile);
                 $actionsTaken = $brain->run($player, $profile, $budget);
             }
