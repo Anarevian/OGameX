@@ -52,6 +52,10 @@ class BotFleetTest extends TestCase
             '--count' => 1,
             '--persona' => $persona,
             '--near-humans' => '0',
+            // These tests exercise behaviour that needs an account with ships and technology
+            // already in place. Bootstrapping from nothing is covered separately, in
+            // BotSpawnTest::testFreshBotStartsFromNothing().
+            '--developed' => true,
         ]));
 
         $profile = BotProfile::firstOrFail();

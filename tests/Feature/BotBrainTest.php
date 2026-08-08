@@ -49,7 +49,14 @@ class BotBrainTest extends TestCase
      */
     private function spawnOne(string $persona): BotProfile
     {
-        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 1, '--persona' => $persona, '--near-humans' => '0']);
+        // Developed, because these tests exercise behaviour that needs ships and technology
+        // already in place. Bootstrapping from nothing is covered in BotSpawnTest.
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', [
+            '--count' => 1,
+            '--persona' => $persona,
+            '--near-humans' => '0',
+            '--developed' => true,
+        ]);
 
         return BotProfile::firstOrFail();
     }

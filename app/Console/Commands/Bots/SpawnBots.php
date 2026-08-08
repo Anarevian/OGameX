@@ -40,7 +40,9 @@ use Throwable;
 #[Signature('ogamex:bots:spawn
                             {--count= : Number of bots to spawn. Defaults to the bots.population config value.}
                             {--persona= : Spawn only this persona instead of the configured universe mix.}
-                            {--near-humans= : Fraction (0..1) placed near existing human players. Defaults to config.}')]
+                            {--near-humans= : Fraction (0..1) placed near existing human players. Defaults to config.}
+                            {--fresh : Start bots from nothing, exactly like a human registration.}
+                            {--developed : Start bots with progress materialised from a backdated registration.}')]
 class SpawnBots extends Command
 {
     use ReadsScalarOptions;
@@ -81,16 +83,22 @@ class SpawnBots extends Command
             return self::FAILURE;
         }
 
-        $this->info(sprintf('Spawning %d NPC accounts...', count($personas)));
+        $this->info(sprintf(
+            'Spawning %d NPC accounts (%s)...',
+            count($personas),
+            $this->spawnDeveloped() ? 'developed, with materialised progress' : 'fresh, starting from nothing',
+        ));
 
         $spawned = [];
         $failed = 0;
         $progressBar = $this->output->createProgressBar(count($personas));
         $progressBar->start();
 
+        $developed = $this->spawnDeveloped();
+
         foreach ($personas as $persona) {
             try {
-                $this->spawnBot($persona);
+                $this->spawnBot($persona, $developed);
                 $spawned[$persona->value] = ($spawned[$persona->value] ?? 0) + 1;
             } catch (Throwable $e) {
                 $failed++;
@@ -131,11 +139,14 @@ class SpawnBots extends Command
      *
      * @throws Throwable
      */
-    private function spawnBot(BotPersona $persona): void
+    private function spawnBot(BotPersona $persona, bool $developed): void
     {
         $config = $persona->config();
         $traits = $this->personaRoller->roll($persona);
-        $ageDays = $this->rollAccountAge();
+
+        // A fresh bot registered just now; only a developed one has a backdated history to
+        // scale its starting progress from.
+        $ageDays = $developed ? $this->rollAccountAge() : 0;
 
         $user = $this->createUser($persona, $traits, $ageDays);
 
@@ -158,6 +169,19 @@ class SpawnBots extends Command
             $homeworld = $this->planetServiceFactory->createInitialPlanetForPlayer($player, $this->rollPlanetName(true));
         }
 
+        $user->planet_current = $homeworld->getPlanetId();
+        $user->save();
+
+        // A fresh bot is done: it owns one homeworld with the standard 500 metal and 500 crystal
+        // and nothing else, exactly as a human registration leaves it. Everything it ever owns
+        // from here it builds itself, so its account can never hold a state the game could not
+        // have produced.
+        if (!$developed) {
+            $this->createProfile($user, $persona, $traits, $config);
+
+            return;
+        }
+
         $techLevels = $this->progression->techConfig($persona, $ageDays, $traits['skill']);
         $planetConfig = $this->progression->planetConfig($persona, $ageDays, $traits['skill']);
 
@@ -175,9 +199,6 @@ class SpawnBots extends Command
 
         $this->createUserTech($user, $techLevels);
         $this->applyPlanetConfig($homeworld->getPlanetId(), $planetConfig);
-
-        $user->planet_current = $homeworld->getPlanetId();
-        $user->save();
 
         // Colonies. These are smaller than the homeworld, as real colonies are.
         $this->createColonies($user->id, $persona, $ageDays, $traits['skill']);
@@ -283,7 +304,9 @@ class SpawnBots extends Command
     private function createUser(BotPersona $persona, array $traits, int $ageDays): User
     {
         $config = $persona->config();
-        $registeredAt = Date::now()->subDays($ageDays)->subMinutes(random_int(0, 1439));
+        $registeredAt = $ageDays > 0
+            ? Date::now()->subDays($ageDays)->subMinutes(random_int(0, 1439))
+            : Date::now()->subMinutes(random_int(0, 240));
 
         $user = new User();
         $user->username = $this->nameGenerator->generate();
@@ -453,6 +476,26 @@ class SpawnBots extends Command
             ? null
             : Date::now()->addMinutes(random_int(1, 60));
         $profile->save();
+    }
+
+    /**
+     * Whether to materialise starting progress, or let bots begin from nothing.
+     *
+     * Fresh is the default. A fresh bot is slower to become interesting — it has to build its
+     * way up at the same pace a human would — but nothing about it was written rather than
+     * played, which rules out a whole class of spawn bugs.
+     */
+    private function spawnDeveloped(): bool
+    {
+        if ($this->option('fresh')) {
+            return false;
+        }
+
+        if ($this->option('developed')) {
+            return true;
+        }
+
+        return (bool) config('bots.spawn.developed', false);
     }
 
     /**

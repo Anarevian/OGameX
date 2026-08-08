@@ -50,6 +50,13 @@ class BuildBuildingAction implements BotAction
     private const INFRASTRUCTURE = ['robot_factory', 'research_lab', 'shipyard', 'nano_factory'];
 
     /**
+     * Buildings whose first level unlocks a whole branch of the game.
+     *
+     * @var array<int, string>
+     */
+    private const GATEWAYS = ['robot_factory', 'research_lab', 'shipyard'];
+
+    /**
      * Roughly how much a unit of crystal and deuterium is worth relative to metal.
      *
      * Used to turn a mixed cost or production into one comparable number. The ratios are the
@@ -273,11 +280,23 @@ class BuildBuildingAction implements BotAction
             default => 0.5,
         };
 
+        // The first level of a gateway building unlocks a whole branch of the game: no research
+        // lab means no research at all, ever, and no shipyard means no ships or defence. A bot
+        // that never builds one stays locked out however much metal it piles up — an account
+        // built from nothing reached mine level 19 with millions unspent and still had no lab,
+        // because a mine upgrade always out-scores an incremental infrastructure one.
+        if ($level === 0 && in_array($machineName, self::GATEWAYS, true)) {
+            $base = max($base, 2.6);
+        }
+
         $score = $base / (1 + ($level * 0.35));
 
         return new ActionCandidate(
             action: 'build_building',
-            category: 'economy',
+            // Its own category, so session fatigue tells it apart from mine upgrades. Sharing
+            // "economy" meant fatigue scaled both together and the ordering never changed, so
+            // whichever scored higher on the first action won every action after it too.
+            category: 'infrastructure',
             score: $score,
             reason: sprintf('%s %d, infrastructure', $machineName, $level + 1),
             payload: ['planet_id' => $planet->getPlanetId(), 'building' => $machineName, 'level' => $level + 1],

@@ -86,6 +86,7 @@ later phases.
 | 18 | **Research scores were an order of magnitude too large.** `interest * (20000 / cost)` is unbounded as cost falls, so a cheap early technology scored in the hundreds against everything else's 0–3. | Saturated to `interest * 2 * (20000 / (cost + 20000))`. |
 | 19 | **Mine scores were unbounded too.** `24 / payback` reached 17 for a level-1 colony mine, so building beat every fleet, research and expedition candidate and the bot did nothing else. | Saturated to `3 * (24 / (payback + 24))`, same ordering, bounded range. Energy and storage scores capped to match. |
 | 20 | Even with comparable scales the brain took the argmax every step, and a multi-planet empire always has another cheap building available, so one category still won every slot. A bot spending all ten actions on the same button is worse at the game and obviously not a person. | Per-session category fatigue in `BotBrain`: a category's score is divided by `1 + 0.6 × actions already spent on it` this session. An explorer went from 100% buildings to 44 buildings / 26 expeditions / 2 research. |
+| 21 | **A bot starting from nothing locked itself out of most of the game.** Building from zero for ten simulated days produced mine level 19 and 2.9M unspent metal, with `robot_factory`, `research_lab` and `shipyard` all still at 0 — so no research, no ships, no defence, ever. A mine upgrade always out-scored an incremental infrastructure one, and both sat in the `economy` category so session fatigue scaled them together and never changed the ordering. | The first level of a gateway building (robot factory, research lab, shipyard) now scores 2.6, because it unlocks a whole branch rather than being an incremental gain; and infrastructure has its own scoring category so fatigue can tell it apart from mines. The same bot now reaches robot factory 10, research lab 8, shipyard 9 and energy technology 5. |
 
 ---
 
@@ -117,6 +118,9 @@ Things that are not bugs but are not finished either. Each needs a decision or a
 
 ### 5.1 Carried from Phase 0
 
+- **Developed spawning writes state rather than playing it.** See §6.0. It is no longer the
+  default, but when used it remains the largest source of "state the game could not have
+  produced" risk in the codebase.
 - **Spawn cost is ~1.6s per bot**, almost all CPU in recursive requirement expansion. A default
   200-bot population therefore takes around five minutes to spawn. Acceptable for a one-off
   command, but worth memoising `ObjectService::getRecursiveRequirements()` if it ever runs on a
@@ -167,6 +171,32 @@ Things that are not bugs but are not finished either. Each needs a decision or a
 ---
 
 ## 6. Operational notes
+
+### 6.0 Fresh vs developed spawning
+
+By default a bot registers **exactly like a human**: one homeworld, 500 metal, 500 crystal, no
+buildings, no technology, no ships. Everything it owns after that, it built itself, so its account
+can never hold a state the game could not have produced.
+
+```bash
+php artisan ogamex:bots:spawn --count=20              # fresh (default)
+php artisan ogamex:bots:spawn --count=20 --developed  # materialised progress
+```
+
+`BOTS_SPAWN_DEVELOPED=true` flips the default; `--fresh` and `--developed` override it per run.
+
+**The trade-off is real and worth understanding before choosing.** A fresh bot grows at the pace a
+human does, which is the point, but that means a newly seeded server starts as 200 identical
+level-zero accounts: a flat highscore, no rivals, nothing worth raiding. Measured here, a fresh
+Miner reaches mine level 22, robot factory 10, research lab 8 and shipyard 9 after ten *simulated*
+days — which is ten real days at normal speed.
+
+Developed spawning skips that wait by writing the state a plausible account would have reached, so
+the universe looks months old the moment it is seeded. The cost is that the state is written rather
+than played, and defects 1, 2, 3, 10, 11 and 16 in §4 all came from that materialisation.
+
+A reasonable middle: seed once with `--developed` for a populated backdrop, then add fresh bots
+over time so new arrivals grow naturally alongside the humans.
 
 ### 6.1 Getting bots to appear — the first-run order matters
 

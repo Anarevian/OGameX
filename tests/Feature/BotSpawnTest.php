@@ -100,7 +100,7 @@ class BotSpawnTest extends TestCase
      */
     public function testSpawnedProgressionSatisfiesRequirements(): void
     {
-        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 5, '--near-humans' => '0']);
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 5, '--near-humans' => '0', '--developed' => true]);
 
         foreach (BotProfile::all() as $profile) {
             $tech = UserTech::where('user_id', $profile->user_id)->first();
@@ -183,7 +183,7 @@ class BotSpawnTest extends TestCase
      */
     public function testSynchroniserAdvancesResourcesWithoutHttpContext(): void
     {
-        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 1, '--persona' => 'miner', '--near-humans' => '0']);
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 1, '--persona' => 'miner', '--near-humans' => '0', '--developed' => true]);
 
         $profile = BotProfile::firstOrFail();
         $playerServiceFactory = resolve(PlayerServiceFactory::class);
@@ -326,5 +326,76 @@ class BotSpawnTest extends TestCase
     private function assertArtisanFails(string $command, array $parameters = []): void
     {
         $this->assertNotSame(0, Artisan::call($command, $parameters), $command . ' should fail.');
+    }
+
+    /**
+     * By default a bot registers exactly like a human: one homeworld, the standard starting
+     * resources, and nothing else. Everything it owns after that, it built itself.
+     */
+    public function testFreshBotStartsFromNothing(): void
+    {
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 3, '--near-humans' => '0']);
+
+        foreach (BotProfile::all() as $profile) {
+            $planets = Planet::where('user_id', $profile->user_id)->get();
+
+            $this->assertCount(1, $planets, 'A fresh bot starts with exactly one planet.');
+
+            $planet = $planets->firstOrFail();
+            $this->assertSame(500.0, (float) $planet->metal);
+            $this->assertSame(500.0, (float) $planet->crystal);
+
+            // Nothing built, nothing researched, nothing in the hangar.
+            foreach (['metal_mine', 'crystal_mine', 'solar_plant', 'robot_factory', 'research_lab', 'shipyard'] as $building) {
+                $this->assertSame(0, (int) $planet->{$building}, $building . ' must start at zero.');
+            }
+
+            $this->assertSame(0, (int) $planet->light_fighter);
+            $this->assertSame(0, (int) $planet->rocket_launcher);
+
+            $tech = UserTech::where('user_id', $profile->user_id)->firstOrFail();
+            foreach (ObjectService::getResearchObjects() as $research) {
+                $this->assertSame(
+                    0,
+                    (int) $tech->getAttribute($research->machine_name),
+                    $research->machine_name . ' must start at zero.'
+                );
+            }
+        }
+    }
+
+    /**
+     * A bot that starts from nothing must be able to build its way to a rounded account, and in
+     * particular must not lock itself out of research and ships by only ever upgrading mines.
+     */
+    public function testFreshBotBootstrapsItsWholeAccount(): void
+    {
+        config(['bots.enabled' => true]);
+
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 1, '--persona' => 'miner', '--near-humans' => '0']);
+
+        $profile = BotProfile::firstOrFail();
+        $profile->activity_profile = array_merge($profile->activity_profile, ['awake_hours' => [0, 24]]);
+        $profile->next_action_at = Date::now()->subMinute();
+        $profile->save();
+
+        for ($i = 0; $i < 50; $i++) {
+            Artisan::call('ogamex:bots:tick', ['--sync' => true]);
+            Date::setTestNow(Date::now()->addHours(4));
+            BotProfile::query()->update(['next_action_at' => Date::now()->subMinute()]);
+        }
+
+        Date::setTestNow();
+
+        $planet = resolve(PlayerServiceFactory::class)
+            ->make($profile->user_id, true)
+            ->planets->current();
+
+        $this->assertGreaterThan(5, $planet->getObjectLevel('metal_mine'), 'A fresh bot must raise its mines.');
+
+        // The gateway buildings are the real check: without them the bot is permanently locked
+        // out of research, ships and defence no matter how much metal it accumulates.
+        $this->assertGreaterThan(0, $planet->getObjectLevel('robot_factory'), 'A fresh bot must build a robot factory.');
+        $this->assertGreaterThan(0, $planet->getObjectLevel('research_lab'), 'A fresh bot must build a research lab.');
     }
 }

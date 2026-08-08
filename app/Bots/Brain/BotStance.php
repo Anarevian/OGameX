@@ -67,6 +67,7 @@ enum BotStance: string
         return match ($this) {
             self::Economising => match ($category) {
                 'economy' => 1.6,
+                'infrastructure' => 1.4,
                 'research' => 0.9,
                 'fleet', 'defence' => 0.5,
                 default => 1.0,
@@ -74,12 +75,14 @@ enum BotStance: string
             self::Researching => match ($category) {
                 'research' => 1.7,
                 'economy' => 1.0,
+                'infrastructure' => 1.1,
                 'fleet', 'defence' => 0.6,
                 default => 1.0,
             },
             self::Militarising => match ($category) {
                 'fleet', 'defence' => 1.7,
                 'economy' => 0.8,
+                'infrastructure' => 1.1,
                 'research' => 0.9,
                 default => 1.0,
             },
@@ -87,6 +90,7 @@ enum BotStance: string
                 'expansion' => 2.0,
                 'research' => 1.2,
                 'economy' => 1.0,
+                'infrastructure' => 1.0,
                 'fleet', 'defence' => 0.6,
                 default => 1.0,
             },

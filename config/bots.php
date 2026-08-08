@@ -52,12 +52,37 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Starting state
+    |--------------------------------------------------------------------------
+    |
+    | By default a bot registers exactly like a human does: one homeworld, 500
+    | metal, 500 crystal, no buildings, no technology, no ships. Everything it
+    | owns from then on, it built itself, which means its account can never be
+    | in a state the game could not have produced.
+    |
+    | Set BOTS_SPAWN_DEVELOPED=true instead to materialise a plausible amount of
+    | progress from a backdated registration date, so the universe looks like it
+    | has been running for months the moment it is seeded. That is much faster to
+    | get an interesting server, but the state is written rather than played, and
+    | every bug in the spawn path so far has come from that materialisation.
+    |
+    | The two can be mixed: spawn a developed population once for the backdrop,
+    | then add fresh bots over time with --fresh.
+    |
+    */
+
+    'spawn' => [
+        'developed' => (bool) env('BOTS_SPAWN_DEVELOPED', false),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Account age
     |--------------------------------------------------------------------------
     |
-    | Bots are spawned with a backdated created_at so the population looks like
-    | it accumulated over time rather than appearing at once. Starting progress
-    | is scaled from this age, so an "old" account is further along.
+    | Only used when spawning developed bots: registration is backdated within
+    | this range and starting progress is scaled from it, so an "old" account is
+    | further along. Fresh bots are always registered just now.
     |
     */
 
