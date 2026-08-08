@@ -3,7 +3,7 @@
 Companion to [`npc-players-plan.md`](npc-players-plan.md). That document is the design; this one
 tracks what is actually built, what is verified, and what is known to be wrong or missing.
 
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-08 (decision log surfaces added)
 
 ---
 
@@ -17,7 +17,7 @@ tracks what is actually built, what is verified, and what is known to be wrong o
 | 3 — Perception and memory | Intel decay, grudges, skill-scaled mistakes | **Mostly built.** Intel decay, battle observation, grudges with decay, grudge-weighted targeting and re-scouting of stale intel are in and tested. Phalanx as an intel source and post-battle rebuilding are not. |
 | 4 — Alliances | Founding, invites, ACS, buddy handling. No messaging (decision §13.4). | **Mostly built.** Founding, applying, attitude-driven application and buddy handling, and the positive side of attitude are in and tested, including a direct assertion of the silence invariant. ACS between allied bots is not. |
 | 5 — Scale | LOD classification, abstract economy, lazy materialisation, backpressure | **Built.** Measured at 300 bots, see §7. |
-| 6 — Tooling | Admin panel, simulation harness, inspect command, docs | **Mostly built.** `ogamex:bots:simulate`, `ogamex:bots:inspect`, `ogamex:bots:pause` and the operator guide are done. The admin panel UI is not; the console tools cover the same ground. |
+| 6 — Tooling | Admin panel, simulation harness, inspect command, docs | **Mostly built.** `ogamex:bots:simulate`, `ogamex:bots:inspect`, `ogamex:bots:log`, `ogamex:bots:pause` and the operator guide are done. The admin panel UI is not; the console tools cover the same ground. |
 
 ---
 
@@ -39,6 +39,8 @@ checks below were actually executed.
 | Phase 3 tests | `./vendor/bin/phpunit --filter BotMemoryTest` | **Pass** — 7 tests |
 | Phase 4 tests | `./vendor/bin/phpunit --filter BotSocialTest` | **Pass** — 5 tests |
 | Phase 5 tests | `./vendor/bin/phpunit --filter BotScaleTest` | **Pass** — 7 tests |
+| Decision log | `./vendor/bin/phpunit --filter BotLogTest` | **Pass** — 12 tests, 71 assertions (~1.6s) |
+| Full bot suite | `php artisan test --filter="Bot*Test"` | **Pass** — 63 tests, 604 assertions (~29 min) |
 
 ### How the environment was made to work
 
@@ -167,17 +169,30 @@ Things that are not bugs but are not finished either. Each needs a decision or a
 - **Bots are silent** (decision §13.4). A human who writes to a bot gets no reply at all. Accepted,
   since bots are openly marked, but it is a visible limitation. The `PhraseProvider` seam is
   documented and unimplemented.
-- **Fairness caps are configured but not enforced**, because nothing can attack yet. Every value
-  under `bots.fairness` is dead configuration until Phase 2. This is the most important thing not
-  to forget: the engine does not enforce newbie protection, so those caps are the only thing that
-  will protect human players.
-- **LOD is a column, not a behaviour.** `bot_profiles.lod` is written at spawn and never read.
+- ~~**Fairness caps are configured but not enforced.**~~ Resolved in Phase 2: `RaidAction` applies
+  all six caps under `bots.fairness`. Kept here because it remains the most important thing not to
+  forget — the engine does not enforce newbie protection, so those caps are the only thing
+  protecting human players.
+- ~~**LOD is a column, not a behaviour.**~~ Resolved in Phase 5: `BotLodClassifier` writes it and
+  the tick pacing reads it.
 - **ACS is not implemented.** Allied bots do not answer each other's defence calls or launch
   joint attacks. `FleetUnionService` exists and `bot_memory` now carries the friendly attitudes
   that would decide who answers whose call, so the remaining work is the fleet coordination
   itself.
 - **Bots never leave an alliance.** They found and join, but nothing makes them walk out after a
   falling-out, so alliance membership only ever grows.
+
+### 5.4 Observability
+
+- **The log records decisions taken, not decisions rejected.** Only the winning candidate of each
+  step is written, so the log answers "why did it do that" but not "why did it *not* do the other
+  thing". A bot that never raids looks identical to one whose raid candidates are always scored
+  just below a mine. Logging every proposal would answer it, at roughly ten times the volume;
+  until then `ogamex:bots:simulate` is the way to see which actions never win.
+- **A tick that produces no decisions leaves no trace.** A bot that was asleep, held no free fleet
+  slot and could afford nothing writes nothing at all, which reads the same as a bot that was
+  never ticked. `ogamex:bots:inspect` shows `last_tick_at`, which is the way to tell the two
+  apart.
 
 ---
 
@@ -252,6 +267,39 @@ docker compose exec ogamex-app php artisan ogamex:bots:tick --user=<id>
 - `bot_action_log` records every decision including failures, with the score and the reasoning
   string. A failed row means the bot proposed something the game rejected, which is the main
   signal that an action class is proposing illegal moves.
+
+### 6.2 Reading the decision log
+
+Two surfaces read the same `bot_action_log` table, and they answer different questions.
+
+`ogamex:bots:inspect <name>` answers *what is this one bot doing* — its last decisions alongside
+its empire, its intel and its grudges, which is what you want when one account looks wrong.
+
+`ogamex:bots:log` answers *what is the population doing*. It is a chronological stream with
+filters (`--user`, `--persona`, `--action`, `--failed`, `--since`, `--limit`), three output formats
+and two extra modes:
+
+```bash
+php artisan ogamex:bots:log --follow                        # tail live
+php artisan ogamex:bots:log --failed --since=24h            # what the game rejected today
+php artisan ogamex:bots:log --limit=0 --format=csv --out=…  # export before retention prunes it
+```
+
+The summary line is written to **stderr**, not stdout, so `--format=json | jq` and
+`--format=csv > file` produce clean data. This is asserted directly in `BotLogTest` using an
+output double with real split streams, because `Artisan::call()` merges them and would hide a
+regression.
+
+A third surface writes the same decisions to `storage/logs/bots.log` as they happen, rotated daily
+(`BOTS_LOG_DAYS`, default 14) and switchable with `BOTS_LOG_FILE`. The project directory is
+bind-mounted into the containers, so `tail -f storage/logs/bots.log` works from the host with no
+`docker compose exec`. The file mirror is deliberately best-effort: `BotActivityLog` swallows its
+own errors, because an unwritable log directory must not cost a bot its turn. The table is written
+either way.
+
+Successful lines carry only the bot id and tick id as context; failures also carry the full
+payload, since reconstructing what the bot thought it was doing is the entire reason to look at a
+failure.
 
 ---
 

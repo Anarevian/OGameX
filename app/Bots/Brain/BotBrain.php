@@ -15,6 +15,7 @@ use OGame\Bots\Actions\RaidAction;
 use OGame\Bots\Actions\RecycleAction;
 use OGame\Bots\Actions\ResearchAction;
 use OGame\Bots\Actions\TransportAction;
+use OGame\Bots\Support\BotActivityLog;
 use OGame\Models\BotActionLog;
 use OGame\Models\BotProfile;
 use OGame\Services\PlayerService;
@@ -52,6 +53,7 @@ class BotBrain
         ColoniseAction $coloniseAction,
         RecycleAction $recycleAction,
         AllianceAction $allianceAction,
+        private readonly BotActivityLog $activityLog,
     ) {
         $this->actions = [
             $buildBuildingAction,
@@ -177,7 +179,7 @@ class BotBrain
             $payload['error'] = $e->getMessage();
         }
 
-        BotActionLog::create([
+        $entry = BotActionLog::create([
             'bot_user_id' => $context->player->getId(),
             'tick_id' => $context->tickId,
             'action' => $candidate->action,
@@ -186,6 +188,14 @@ class BotBrain
             'reason' => Str::limit($candidate->reason, 250, ''),
             'payload' => $payload,
         ]);
+
+        // The table is the record; the file is what an operator can watch. Mirroring here rather
+        // than in the model keeps it to decisions actually taken, not every row ever written.
+        $this->activityLog->record(
+            $entry,
+            $context->player->getUsername(false),
+            $context->profile->persona->value,
+        );
 
         return $succeeded;
     }

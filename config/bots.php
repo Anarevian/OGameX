@@ -162,6 +162,27 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Decision log
+    |--------------------------------------------------------------------------
+    |
+    | Every decision is always written to the bot_action_log table, which is what
+    | `ogamex:bots:log` and `ogamex:bots:inspect` read. Setting BOTS_LOG_FILE
+    | additionally mirrors each decision to storage/logs/bots.log as it happens,
+    | so the population can be watched with `tail -f` and the activity outlives
+    | the table's retention window. Rotation is daily, kept for BOTS_LOG_DAYS.
+    |
+    | Turn the file off on a large population if disk is tight: 200 bots produce
+    | roughly a thousand lines a day.
+    |
+    */
+
+    'log' => [
+        'file' => (bool) env('BOTS_LOG_FILE', true),
+        'channel' => env('BOTS_LOG_CHANNEL', 'bots'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Default universe mix
     |--------------------------------------------------------------------------
     |

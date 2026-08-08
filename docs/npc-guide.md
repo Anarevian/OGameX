@@ -72,6 +72,7 @@ backdrop, then add fresh NPCs over time.
 ```bash
 php artisan ogamex:bots:inspect              # list every NPC: persona, skill, stance, next turn
 php artisan ogamex:bots:inspect Nebula42     # one NPC in full: empire, decisions, intel, grudges
+php artisan ogamex:bots:log --follow         # every decision the population takes, as it happens
 php artisan ogamex:bots:tick --user=123      # force a turn now, ignoring its schedule
 
 php artisan ogamex:bots:pause                # stop all turns immediately, no deploy needed
@@ -93,6 +94,61 @@ The scheduler and queue containers run the NPCs automatically; there is nothing 
 reasoning that produced them, what the NPC currently believes about its neighbours and how stale
 that belief is, and how it feels about everyone it has met. Between those three, most odd behaviour
 explains itself.
+
+---
+
+## The decision log
+
+Every decision an NPC takes is recorded — what it did, how strongly it wanted to, why, and whether
+the game accepted it. `inspect` answers *what is this one NPC doing*; the log answers *what is the
+population doing*, which is usually the question you actually have.
+
+```bash
+php artisan ogamex:bots:log                       # the last 200 decisions, oldest first
+php artisan ogamex:bots:log --follow              # watch the universe play itself
+php artisan ogamex:bots:log --failed --since=24h  # what the game rejected today, and why
+```
+
+```
+2026-08-08 22:33:37  hubble1989  casual  build_building  ok    3.92  solar_plant 9, energy deficit -164
+2026-08-08 22:33:38  hubble1989  casual  espionage       ok    2.00  scout 6:111:7 with 2 probes
+2026-08-08 22:33:38  Storm_Fall  miner   build_defence   ok    0.20  2x rocket_launcher
+```
+
+Filters combine: `--user=Nebula42` (id or name), `--persona=raider`, `--action=raid --action=espionage`,
+`--failed`, `--since=90m|12h|7d|<date>`, `--limit=N` (`0` for everything).
+
+**Failures are the interesting rows.** A `FAIL` line means an NPC proposed something the game
+refused, and the line carries the exception instead of the reason. A handful is normal — a fleet
+slot filled between deciding and acting. A steady stream of the same one is a bug.
+
+### Exporting
+
+```bash
+php artisan ogamex:bots:log --limit=0 --format=csv --out=storage/app/bots-week.csv
+php artisan ogamex:bots:log --format=json | jq 'select(.action == "raid")'
+```
+
+`--format=json` emits one object per line, `--format=csv` a header plus rows. The summary line goes
+to stderr, so piping to `jq` or redirecting to a file gives clean data. `--out` appends rather than
+overwrites, so exporting twice does not destroy the first export.
+
+Retention on the table is `BOTS_ACTION_LOG_RETENTION_DAYS` (14 by default) — export before that
+window closes if you want to keep a record.
+
+### The log file
+
+The same decisions are also written to `storage/logs/bots.log` as they happen, rotated daily and
+kept for `BOTS_LOG_DAYS`. The project directory is bind-mounted into the containers, so this works
+from the host with no `docker compose exec`:
+
+```bash
+tail -f storage/logs/bots.log
+grep raid storage/logs/bots.log
+```
+
+Set `BOTS_LOG_FILE=false` to turn it off. Around 200 NPCs produce roughly a thousand lines a day.
+The table is written either way — turning the file off costs you `tail`, not the log.
 
 ---
 

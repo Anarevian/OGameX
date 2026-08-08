@@ -73,6 +73,18 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Every decision the NPC players take, one per line. Separate from the application log
+        // because it is high-volume, entirely uninteresting when debugging anything else, and the
+        // thing a server owner actually wants to watch while the universe runs.
+        'bots' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/bots.log'),
+            'level' => 'info',
+            'days' => (int) env('BOTS_LOG_DAYS', 14),
+            // Bot reasons are free text and may contain braces; leave them alone.
+            'replace_placeholders' => false,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

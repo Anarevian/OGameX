@@ -221,6 +221,9 @@ See [docs/npc-guide.md](docs/npc-guide.md) to get started. In short: set `BOTS_E
 the migrations, register your own account, then `php artisan ogamex:bots:spawn --count=20`.
 Enabling on its own creates nothing.
 
+Every decision they take is logged. `php artisan ogamex:bots:log --follow` streams it live, and
+the same lines are written to `storage/logs/bots.log`.
+
 ### Assigning admin role
 By default, the first registered user is assigned the admin role which can see the admin bar and is able to change server settings. You can also assign the admin role manually via the command line:
   ```

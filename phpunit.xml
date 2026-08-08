@@ -14,6 +14,9 @@
     <env name="SESSION_DRIVER" value="array"/>
     <env name="QUEUE_DRIVER" value="sync"/>
     <env name="BCRYPT_ROUNDS" value="4"/>
+    <!-- Keep the behavioural bot suites from writing a real storage/logs/bots.log on every run.
+         BotLogTest turns the mirror back on explicitly for the tests that cover it. -->
+    <env name="BOTS_LOG_FILE" value="false"/>
   </php>
   <source>
     <include>
