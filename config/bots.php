@@ -178,7 +178,7 @@ return [
             'aggression' => [0.0, 0.1],
             'risk_tolerance' => [0.1, 0.3],
             'growth' => 1.25,
-            'focus' => ['economy' => 1.0, 'research' => 0.6, 'fleet' => 0.15, 'defence' => 0.7],
+            'focus' => ['economy' => 1.0, 'research' => 0.6, 'fleet' => 0.15, 'defence' => 0.45],
             'activity' => [
                 'sessions_per_day' => [2, 5],
                 'session_actions' => [3, 10],

@@ -5,6 +5,7 @@ namespace OGame\Console\Commands\Bots;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use OGame\Bots\Support\ReadsScalarOptions;
 use OGame\Enums\BotPersona;
 use OGame\Factories\PlayerServiceFactory;
 use OGame\Models\BotProfile;
@@ -25,6 +26,8 @@ use Throwable;
                             {--force : Skip the confirmation prompt.}')]
 class DespawnBots extends Command
 {
+    use ReadsScalarOptions;
+
     public function __construct(private readonly PlayerServiceFactory $playerServiceFactory)
     {
         parent::__construct();
@@ -37,8 +40,8 @@ class DespawnBots extends Command
     {
         $query = BotProfile::query();
 
-        $persona = $this->option('persona');
-        if (is_string($persona) && $persona !== '') {
+        $persona = $this->scalarOption('persona');
+        if ($persona !== null) {
             $personaEnum = BotPersona::tryFrom($persona);
             if ($personaEnum === null) {
                 $this->error(sprintf('Unknown persona "%s". Valid values: %s', $persona, implode(', ', array_column(BotPersona::cases(), 'value'))));
@@ -49,12 +52,12 @@ class DespawnBots extends Command
             $query->where('persona', $personaEnum->value);
         }
 
-        $limit = $this->option('limit');
-        if (is_string($limit) && $limit !== '') {
-            $query->limit((int) $limit);
+        $limit = $this->intOption('limit');
+        if ($limit !== null) {
+            $query->limit($limit);
         }
 
-        $hasFilter = (is_string($persona) && $persona !== '') || (is_string($limit) && $limit !== '');
+        $hasFilter = $persona !== null || $limit !== null;
 
         if (!$hasFilter && !$this->option('all')) {
             $this->error('Refusing to delete every bot without --all. Pass --all, --persona or --limit.');

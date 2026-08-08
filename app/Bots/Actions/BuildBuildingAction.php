@@ -142,9 +142,14 @@ class BuildBuildingAction implements BotAction
 
         $paybackHours = $cost / $gainPerHour;
 
-        // Score falls off as payback grows. 24h payback scores 1.0, 240h scores 0.1. Anything
-        // beyond about three weeks of payback is not worth a decision slot.
-        if ($paybackHours > 500) {
+        // Score falls off as payback grows: 24h payback scores 1.0, 240h scores 0.1, so a slow
+        // upgrade naturally loses to a fast one without needing a cutoff.
+        //
+        // The cutoff is deliberately generous rather than tight. A tight one starves a developed
+        // account: once its cheap colony mines are done, every remaining upgrade is expensive, and
+        // a bot that refuses all of them plateaus with millions of unspent metal sitting on the
+        // planet. Ranking handles the ordering; this only discards the genuinely absurd.
+        if ($paybackHours > 2000) {
             return null;
         }
 

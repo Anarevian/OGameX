@@ -6,6 +6,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Date;
+use OGame\Bots\Support\ReadsScalarOptions;
 use OGame\Enums\BotPersona;
 use OGame\Jobs\BotTickJob;
 use OGame\Models\BotProfile;
@@ -26,12 +27,14 @@ use OGame\Models\BotProfile;
                             {--user= : Tick one specific bot user id, ignoring its schedule.}')]
 class TickBots extends Command
 {
+    use ReadsScalarOptions;
+
     /**
      * Execute the console command.
      */
     public function handle(): int
     {
-        if (!config('bots.enabled') && !$this->option('user')) {
+        if (!config('bots.enabled') && $this->intOption('user') === null) {
             // Silent by default: this runs every minute, and a disabled server should not fill
             // the scheduler log with notices.
             $this->line('Bots are disabled (BOTS_ENABLED=false). Nothing to do.', 'comment', 'v');
@@ -39,15 +42,12 @@ class TickBots extends Command
             return self::SUCCESS;
         }
 
-        $userOption = $this->option('user');
-        if (is_string($userOption) && $userOption !== '') {
-            return $this->tickSingle((int) $userOption);
+        $userOption = $this->intOption('user');
+        if ($userOption !== null) {
+            return $this->tickSingle($userOption);
         }
 
-        $limitOption = $this->option('limit');
-        $limit = is_string($limitOption) && $limitOption !== ''
-            ? (int) $limitOption
-            : (int) config('bots.tick.max_bots_per_sweep', 60);
+        $limit = $this->intOption('limit') ?? (int) config('bots.tick.max_bots_per_sweep', 60);
 
         $due = BotProfile::query()
             ->where('enabled', true)

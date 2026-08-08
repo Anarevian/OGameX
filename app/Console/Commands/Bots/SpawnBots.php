@@ -13,6 +13,7 @@ use OGame\Bots\Support\BotNameGenerator;
 use OGame\Bots\Support\BotPersonaRoller;
 use OGame\Bots\Support\BotProgression;
 use OGame\Bots\Support\BotSynchroniser;
+use OGame\Bots\Support\ReadsScalarOptions;
 use OGame\Enums\BotLod;
 use OGame\Enums\BotPersona;
 use OGame\Enums\CharacterClass;
@@ -23,6 +24,7 @@ use OGame\Models\Planet;
 use OGame\Models\Planet\Coordinate;
 use OGame\Models\User;
 use OGame\Models\UserTech;
+use OGame\Services\PlanetService;
 use OGame\Services\SettingsService;
 use RuntimeException;
 use Throwable;
@@ -41,6 +43,8 @@ use Throwable;
                             {--near-humans= : Fraction (0..1) placed near existing human players. Defaults to config.}')]
 class SpawnBots extends Command
 {
+    use ReadsScalarOptions;
+
     /**
      * Highest planet position in a system.
      */
@@ -187,7 +191,87 @@ class SpawnBots extends Command
             $planet->updateResourceProductionStats(false);
             $planet->updateResourceStorageStats(false);
             $planet->save();
+
+            $this->balanceEnergy($planet, $traits['skill']);
+            $this->clampResourcesToStorage($planet->getPlanetId(), $planet, $traits['skill']);
         }
+    }
+
+    /**
+     * Raise the solar plant until the planet is not running an energy deficit.
+     *
+     * Mine energy consumption grows faster than solar output at the same level, so scaling both
+     * from the same progression factor leaves every spawned planet energy-starved. A planet in
+     * deficit has its whole production scaled down, and the brain then correctly spends nearly
+     * every decision digging itself out — which looks like a bot that never develops.
+     *
+     * The loop uses the game's own production maths rather than reimplementing the formula, so
+     * it stays correct if the numbers are ever rebalanced. Careless players are left with a
+     * small deficit on purpose: running slightly under-powered is a very human mistake.
+     */
+    private function balanceEnergy(PlanetService $planetService, float $skill): void
+    {
+        // A skilled player keeps a margin; a careless one runs at a deficit and does not notice.
+        $target = $skill > 0.5 ? 0 : -150;
+
+        for ($step = 0; $step < 25; $step++) {
+            if ($planetService->energy()->get() >= $target) {
+                return;
+            }
+
+            // Never push a planet past its field limit to fix energy.
+            if ($planetService->getBuildingCount() >= $planetService->getPlanetFieldMax()) {
+                return;
+            }
+
+            $planet = Planet::find($planetService->getPlanetId());
+            if ($planet === null) {
+                return;
+            }
+
+            $planet->solar_plant = (int) $planet->solar_plant + 1;
+            $planet->save();
+
+            $planetService->reloadPlanet();
+            $planetService->updateResourceProductionStats(false);
+            $planetService->save();
+        }
+    }
+
+    /**
+     * Bring a freshly spawned planet's resources within what its storage can actually hold.
+     *
+     * The progression model works out a plausible stockpile from the account's age and skill,
+     * but it does not know how much storage that account built. A planet spawned above its
+     * capacity is not illegal, yet it is stuck: production is clamped at the storage ceiling, so
+     * the planet earns nothing until something is spent, and a newly spawned bot looks frozen.
+     *
+     * Filling to a fraction of capacity also reads better. A careless player sits near the top of
+     * their stores with production going to waste; a careful one keeps room to spare.
+     */
+    private function clampResourcesToStorage(int $planetId, PlanetService $planetService, float $skill): void
+    {
+        $planet = Planet::find($planetId);
+        if ($planet === null) {
+            return;
+        }
+
+        // 0.35 of capacity for a careful player, up to 0.95 for one who never spends.
+        $fillTarget = 0.95 - (0.6 * $skill);
+
+        $ceilings = [
+            'metal' => $planetService->metalStorage()->get() * $fillTarget,
+            'crystal' => $planetService->crystalStorage()->get() * $fillTarget,
+            'deuterium' => $planetService->deuteriumStorage()->get() * $fillTarget,
+        ];
+
+        foreach ($ceilings as $resource => $ceiling) {
+            if ($ceiling > 0 && $planet->{$resource} > $ceiling) {
+                $planet->{$resource} = (int) floor($ceiling);
+            }
+        }
+
+        $planet->save();
     }
 
     /**
@@ -209,7 +293,9 @@ class SpawnBots extends Command
         $user->password = Hash::make(Str::random(64));
         $user->lang = $this->rollLanguage();
 
-        $characterClass = isset($config['character_class']) && $config['character_class'] !== null
+        // isset() already excludes a null character_class, which is how a persona says
+        // "this account never picked a class".
+        $characterClass = isset($config['character_class'])
             ? CharacterClass::tryFrom((int) $config['character_class'])
             : null;
         $user->character_class = $characterClass?->value;
@@ -370,13 +456,7 @@ class SpawnBots extends Command
      */
     private function resolveCount(): int
     {
-        $option = $this->option('count');
-
-        if (is_string($option) && $option !== '') {
-            return (int) $option;
-        }
-
-        return (int) config('bots.population', 200);
+        return $this->intOption('count') ?? (int) config('bots.population', 200);
     }
 
     /**
@@ -386,9 +466,9 @@ class SpawnBots extends Command
      */
     private function resolvePersonaBatch(int $count): array
     {
-        $only = $this->option('persona');
+        $only = $this->scalarOption('persona');
 
-        if (is_string($only) && $only !== '') {
+        if ($only !== null) {
             $persona = BotPersona::tryFrom($only);
             if ($persona === null) {
                 $this->error(sprintf('Unknown persona "%s". Valid values: %s', $only, implode(', ', array_column(BotPersona::cases(), 'value'))));
@@ -442,10 +522,8 @@ class SpawnBots extends Command
      */
     private function shouldPlaceNearHumans(): bool
     {
-        $option = $this->option('near-humans');
-        $share = is_string($option) && $option !== ''
-            ? (float) $option
-            : (float) config('bots.placement.human_proximity_share', 0.35);
+        $share = $this->floatOption('near-humans')
+            ?? (float) config('bots.placement.human_proximity_share', 0.35);
 
         if ($share <= 0) {
             return false;

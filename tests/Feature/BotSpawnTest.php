@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Date;
 use OGame\Bots\Support\BotProgression;
 use OGame\Bots\Support\BotSynchroniser;
@@ -58,8 +59,7 @@ class BotSpawnTest extends TestCase
      */
     public function testSpawnCreatesCompleteAccounts(): void
     {
-        $this->artisan('ogamex:bots:spawn', ['--count' => 6, '--near-humans' => '0'])
-            ->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 6, '--near-humans' => '0']);
 
         $profiles = BotProfile::all();
         $this->assertCount(6, $profiles);
@@ -70,7 +70,7 @@ class BotSpawnTest extends TestCase
 
             // Every account needs a tech row and at least a homeworld, or the game breaks when
             // a human loads the galaxy view on it.
-            $this->assertDatabaseHas('user_tech', ['user_id' => $user->id]);
+            $this->assertDatabaseHas('users_tech', ['user_id' => $user->id]);
             $this->assertGreaterThanOrEqual(1, Planet::where('user_id', $user->id)->count());
             $this->assertNotNull($user->planet_current);
 
@@ -86,8 +86,7 @@ class BotSpawnTest extends TestCase
      */
     public function testBotsDoNotShareAnIpAddress(): void
     {
-        $this->artisan('ogamex:bots:spawn', ['--count' => 8, '--near-humans' => '0'])
-            ->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 8, '--near-humans' => '0']);
 
         $userIds = BotProfile::pluck('user_id');
         $ips = User::whereIn('id', $userIds)->pluck('last_ip');
@@ -101,8 +100,7 @@ class BotSpawnTest extends TestCase
      */
     public function testSpawnedProgressionSatisfiesRequirements(): void
     {
-        $this->artisan('ogamex:bots:spawn', ['--count' => 5, '--near-humans' => '0'])
-            ->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 5, '--near-humans' => '0']);
 
         foreach (BotProfile::all() as $profile) {
             $tech = UserTech::where('user_id', $profile->user_id)->first();
@@ -138,8 +136,7 @@ class BotSpawnTest extends TestCase
      */
     public function testGhostsLookInactiveAndAreNotTickable(): void
     {
-        $this->artisan('ogamex:bots:spawn', ['--count' => 4, '--persona' => 'ghost', '--near-humans' => '0'])
-            ->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 4, '--persona' => 'ghost', '--near-humans' => '0']);
 
         foreach (BotProfile::all() as $profile) {
             $this->assertFalse($profile->isTickable(), 'Ghosts must never be ticked.');
@@ -154,8 +151,7 @@ class BotSpawnTest extends TestCase
      */
     public function testActiveBotsAreScheduled(): void
     {
-        $this->artisan('ogamex:bots:spawn', ['--count' => 6, '--persona' => 'miner', '--near-humans' => '0'])
-            ->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 6, '--persona' => 'miner', '--near-humans' => '0']);
 
         $profiles = BotProfile::all();
 
@@ -181,8 +177,7 @@ class BotSpawnTest extends TestCase
      */
     public function testSynchroniserAdvancesResourcesWithoutHttpContext(): void
     {
-        $this->artisan('ogamex:bots:spawn', ['--count' => 1, '--persona' => 'miner', '--near-humans' => '0'])
-            ->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 1, '--persona' => 'miner', '--near-humans' => '0']);
 
         $profile = BotProfile::firstOrFail();
         $playerServiceFactory = resolve(PlayerServiceFactory::class);
@@ -209,8 +204,7 @@ class BotSpawnTest extends TestCase
      */
     public function testSynchroniserDoesNotStampActivityWhileAsleep(): void
     {
-        $this->artisan('ogamex:bots:spawn', ['--count' => 1, '--persona' => 'miner', '--near-humans' => '0'])
-            ->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 1, '--persona' => 'miner', '--near-humans' => '0']);
 
         $profile = BotProfile::firstOrFail();
 
@@ -256,14 +250,12 @@ class BotSpawnTest extends TestCase
      */
     public function testDespawnRemovesEverything(): void
     {
-        $this->artisan('ogamex:bots:spawn', ['--count' => 3, '--near-humans' => '0'])
-            ->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 3, '--near-humans' => '0']);
 
         $userIds = BotProfile::pluck('user_id')->all();
         $this->assertCount(3, $userIds);
 
-        $this->artisan('ogamex:bots:despawn', ['--all' => true, '--force' => true])
-            ->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:despawn', ['--all' => true, '--force' => true]);
 
         $this->assertSame(0, BotProfile::count());
         $this->assertSame(0, User::whereIn('id', $userIds)->count());
@@ -276,11 +268,9 @@ class BotSpawnTest extends TestCase
      */
     public function testDespawnRequiresAnExplicitFilter(): void
     {
-        $this->artisan('ogamex:bots:spawn', ['--count' => 2, '--near-humans' => '0'])
-            ->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 2, '--near-humans' => '0']);
 
-        $this->artisan('ogamex:bots:despawn', ['--force' => true])
-            ->assertFailed();
+        $this->assertArtisanFails('ogamex:bots:despawn', ['--force' => true]);
 
         $this->assertSame(2, BotProfile::count());
     }
@@ -290,13 +280,10 @@ class BotSpawnTest extends TestCase
      */
     public function testDespawnCanTargetASinglePersona(): void
     {
-        $this->artisan('ogamex:bots:spawn', ['--count' => 2, '--persona' => 'turtle', '--near-humans' => '0'])
-            ->assertSuccessful();
-        $this->artisan('ogamex:bots:spawn', ['--count' => 2, '--persona' => 'miner', '--near-humans' => '0'])
-            ->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 2, '--persona' => 'turtle', '--near-humans' => '0']);
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 2, '--persona' => 'miner', '--near-humans' => '0']);
 
-        $this->artisan('ogamex:bots:despawn', ['--persona' => 'turtle', '--force' => true])
-            ->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:despawn', ['--persona' => 'turtle', '--force' => true]);
 
         $this->assertSame(0, BotProfile::where('persona', 'turtle')->count());
         $this->assertSame(2, BotProfile::where('persona', 'miner')->count());
@@ -307,9 +294,31 @@ class BotSpawnTest extends TestCase
      */
     public function testSpawnRejectsUnknownPersona(): void
     {
-        $this->artisan('ogamex:bots:spawn', ['--count' => 1, '--persona' => 'not-a-persona'])
-            ->assertFailed();
+        $this->assertArtisanFails('ogamex:bots:spawn', ['--count' => 1, '--persona' => 'not-a-persona']);
 
         $this->assertSame(0, BotProfile::count());
+    }
+
+    /**
+     * Run an artisan command and assert it succeeded.
+     *
+     * Uses Artisan::call() rather than chaining off $this->artisan(), because that returns
+     * PendingCommand|int and the union is not narrowable, which static analysis rejects.
+     *
+     * @param array<string, mixed> $parameters
+     */
+    private function assertArtisanSucceeds(string $command, array $parameters = []): void
+    {
+        $this->assertSame(0, Artisan::call($command, $parameters), $command . ' should succeed.');
+    }
+
+    /**
+     * Run an artisan command and assert it failed.
+     *
+     * @param array<string, mixed> $parameters
+     */
+    private function assertArtisanFails(string $command, array $parameters = []): void
+    {
+        $this->assertNotSame(0, Artisan::call($command, $parameters), $command . ' should fail.');
     }
 }

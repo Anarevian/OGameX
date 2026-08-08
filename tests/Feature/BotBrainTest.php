@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Date;
 use OGame\Bots\Activity\ActivityScheduler;
 use OGame\Enums\BotPersona;
@@ -48,8 +49,7 @@ class BotBrainTest extends TestCase
      */
     private function spawnOne(string $persona): BotProfile
     {
-        $this->artisan('ogamex:bots:spawn', ['--count' => 1, '--persona' => $persona, '--near-humans' => '0'])
-            ->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:spawn', ['--count' => 1, '--persona' => $persona, '--near-humans' => '0']);
 
         return BotProfile::firstOrFail();
     }
@@ -73,7 +73,7 @@ class BotBrainTest extends TestCase
     {
         $profile = $this->forceAwake($this->spawnOne('miner'));
 
-        $this->artisan('ogamex:bots:tick', ['--sync' => true])->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:tick', ['--sync' => true]);
 
         $log = BotActionLog::where('bot_user_id', $profile->user_id)->get();
 
@@ -94,7 +94,7 @@ class BotBrainTest extends TestCase
         $this->forceAwake($this->spawnOne('miner'));
 
         for ($i = 0; $i < 5; $i++) {
-            $this->artisan('ogamex:bots:tick', ['--sync' => true])->assertSuccessful();
+            $this->assertArtisanSucceeds('ogamex:bots:tick', ['--sync' => true]);
             Date::setTestNow(Date::now()->addHours(4));
             BotProfile::query()->update(['next_action_at' => Date::now()->subMinute()]);
         }
@@ -116,18 +116,16 @@ class BotBrainTest extends TestCase
         $profile = $this->forceAwake($this->spawnOne('miner'));
         $playerServiceFactory = resolve(PlayerServiceFactory::class);
 
-        $before = $playerServiceFactory->make($profile->user_id, true)
-            ->planets->current()->getObjectLevel('metal_mine');
+        $before = $this->totalMineLevels($playerServiceFactory, $profile->user_id);
 
         // Seven simulated days, ticking every few hours.
         for ($i = 0; $i < 40; $i++) {
-            $this->artisan('ogamex:bots:tick', ['--sync' => true])->assertSuccessful();
+            $this->assertArtisanSucceeds('ogamex:bots:tick', ['--sync' => true]);
             Date::setTestNow(Date::now()->addHours(4));
             BotProfile::query()->update(['next_action_at' => Date::now()->subMinute()]);
         }
 
-        $after = $playerServiceFactory->make($profile->user_id, true)
-            ->planets->current()->getObjectLevel('metal_mine');
+        $after = $this->totalMineLevels($playerServiceFactory, $profile->user_id);
 
         $this->assertGreaterThan($before, $after, 'A miner must raise its mines over a week of play.');
     }
@@ -143,7 +141,7 @@ class BotBrainTest extends TestCase
         $profile->next_action_at = Date::now()->subMinute();
         $profile->save();
 
-        $this->artisan('ogamex:bots:tick', ['--sync' => true])->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:tick', ['--sync' => true]);
 
         $this->assertSame(0, BotActionLog::where('bot_user_id', $profile->user_id)->count());
 
@@ -161,7 +159,7 @@ class BotBrainTest extends TestCase
         $profile->next_action_at = Date::now()->subDay();
         $profile->save();
 
-        $this->artisan('ogamex:bots:tick', ['--sync' => true])->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:tick', ['--sync' => true]);
 
         $this->assertSame(0, BotActionLog::where('bot_user_id', $profile->user_id)->count());
     }
@@ -175,7 +173,7 @@ class BotBrainTest extends TestCase
 
         config(['bots.enabled' => false]);
 
-        $this->artisan('ogamex:bots:tick', ['--sync' => true])->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:tick', ['--sync' => true]);
 
         $this->assertSame(0, BotActionLog::where('bot_user_id', $profile->user_id)->count());
     }
@@ -218,12 +216,14 @@ class BotBrainTest extends TestCase
         $this->forceAwake($this->spawnOne('turtle'));
 
         for ($i = 0; $i < 25; $i++) {
-            $this->artisan('ogamex:bots:tick', ['--sync' => true])->assertSuccessful();
+            $this->assertArtisanSucceeds('ogamex:bots:tick', ['--sync' => true]);
             Date::setTestNow(Date::now()->addHours(6));
             BotProfile::query()->update(['next_action_at' => Date::now()->subMinute()]);
         }
 
         $turtleDefence = BotActionLog::where('action', 'build_defence')->count();
+        $turtleTotal = max(1, BotActionLog::count());
+        $turtleShare = $turtleDefence / $turtleTotal;
 
         $this->removeAllBots();
         Date::setTestNow();
@@ -232,17 +232,23 @@ class BotBrainTest extends TestCase
         $this->forceAwake($this->spawnOne('miner'));
 
         for ($i = 0; $i < 25; $i++) {
-            $this->artisan('ogamex:bots:tick', ['--sync' => true])->assertSuccessful();
+            $this->assertArtisanSucceeds('ogamex:bots:tick', ['--sync' => true]);
             Date::setTestNow(Date::now()->addHours(6));
             BotProfile::query()->update(['next_action_at' => Date::now()->subMinute()]);
         }
 
         $minerDefence = BotActionLog::where('action', 'build_defence')->count();
+        $minerTotal = max(1, BotActionLog::count());
+        $minerShare = $minerDefence / $minerTotal;
 
         $this->assertGreaterThan(
-            $minerDefence,
-            $turtleDefence,
-            'A turtle must build more defence than a miner over the same period.'
+            $minerShare,
+            $turtleShare,
+            sprintf(
+                'A turtle must spend a larger share of its decisions on defence than a miner (turtle %.2f, miner %.2f).',
+                $turtleShare,
+                $minerShare
+            )
         );
     }
 
@@ -253,14 +259,15 @@ class BotBrainTest extends TestCase
     {
         $profile = $this->forceAwake($this->spawnOne('miner'));
 
-        BotActionLog::create([
+        $old = BotActionLog::create([
             'bot_user_id' => $profile->user_id,
             'action' => 'build_building',
             'succeeded' => true,
             'reason' => 'old entry',
-            'created_at' => Date::now()->subDays(40),
-            'updated_at' => Date::now()->subDays(40),
         ]);
+        // created_at is not fillable, so it has to be backdated after the insert.
+        $old->created_at = Date::now()->subDays(40);
+        $old->save();
         BotActionLog::create([
             'bot_user_id' => $profile->user_id,
             'action' => 'build_building',
@@ -268,7 +275,7 @@ class BotBrainTest extends TestCase
             'reason' => 'recent entry',
         ]);
 
-        $this->artisan('ogamex:bots:prune-log', ['--days' => 14])->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:prune-log', ['--days' => 14]);
 
         $remaining = BotActionLog::where('bot_user_id', $profile->user_id)->pluck('reason');
 
@@ -285,7 +292,7 @@ class BotBrainTest extends TestCase
         $profile->next_action_at = Date::now()->addDays(3);
         $profile->save();
 
-        $this->artisan('ogamex:bots:tick', ['--user' => (string) $profile->user_id])->assertSuccessful();
+        $this->assertArtisanSucceeds('ogamex:bots:tick', ['--user' => (string) $profile->user_id]);
 
         $profile->refresh();
         $this->assertNotNull($profile->last_tick_at);
@@ -307,7 +314,7 @@ class BotBrainTest extends TestCase
                 $this->forceAwake($profile);
             }
 
-            $this->artisan('ogamex:bots:tick', ['--sync' => true])->assertSuccessful();
+            $this->assertArtisanSucceeds('ogamex:bots:tick', ['--sync' => true]);
 
             $this->assertSame(
                 0,
@@ -315,5 +322,37 @@ class BotBrainTest extends TestCase
                 sprintf('Persona %s produced a failed action.', $persona->value)
             );
         }
+    }
+
+    /**
+     * Run an artisan command and assert it succeeded.
+     *
+     * Uses Artisan::call() rather than chaining off $this->artisan(), because that returns
+     * PendingCommand|int and the union is not narrowable, which static analysis rejects.
+     *
+     * @param array<string, mixed> $parameters
+     */
+    private function assertArtisanSucceeds(string $command, array $parameters = []): void
+    {
+        $this->assertSame(0, Artisan::call($command, $parameters), $command . ' should succeed.');
+    }
+
+    /**
+     * Sum the mine levels across every planet a bot owns.
+     *
+     * A bot with colonies invests wherever the payback is best, which is often not the
+     * homeworld, so the empire total is the meaningful measure of economic growth.
+     */
+    private function totalMineLevels(PlayerServiceFactory $factory, int $userId): int
+    {
+        $total = 0;
+
+        foreach ($factory->make($userId, true)->planets->all() as $planet) {
+            $total += $planet->getObjectLevel('metal_mine')
+                + $planet->getObjectLevel('crystal_mine')
+                + $planet->getObjectLevel('deuterium_synthesizer');
+        }
+
+        return $total;
     }
 }

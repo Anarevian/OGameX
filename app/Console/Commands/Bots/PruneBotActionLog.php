@@ -6,6 +6,7 @@ use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Date;
+use OGame\Bots\Support\ReadsScalarOptions;
 use OGame\Models\BotActionLog;
 
 /**
@@ -20,15 +21,14 @@ use OGame\Models\BotActionLog;
                             {--days= : Override the configured retention window.}')]
 class PruneBotActionLog extends Command
 {
+    use ReadsScalarOptions;
+
     /**
      * Execute the console command.
      */
     public function handle(): int
     {
-        $daysOption = $this->option('days');
-        $days = is_string($daysOption) && $daysOption !== ''
-            ? (int) $daysOption
-            : (int) config('bots.action_log_retention_days', 14);
+        $days = $this->intOption('days') ?? (int) config('bots.action_log_retention_days', 14);
 
         if ($days < 1) {
             $this->error('Retention window must be at least one day.');
