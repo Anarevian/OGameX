@@ -215,6 +215,10 @@ return [
                 'awake_hours' => [8, 24],
             ],
             'planets' => [2, 9],
+            // An Explorer without astrophysics cannot run a single expedition, which is the
+            // whole persona. Scaling alone rounds it to zero on a young account, so the
+            // defining technology gets a floor.
+            'tech_floor' => ['astrophysics' => 1],
         ],
 
         'turtle' => [

@@ -6,6 +6,9 @@ use Illuminate\Support\Str;
 use OGame\Bots\Actions\BotAction;
 use OGame\Bots\Actions\BuildBuildingAction;
 use OGame\Bots\Actions\BuildUnitsAction;
+use OGame\Bots\Actions\EspionageAction;
+use OGame\Bots\Actions\ExpeditionAction;
+use OGame\Bots\Actions\RaidAction;
 use OGame\Bots\Actions\ResearchAction;
 use OGame\Models\BotActionLog;
 use OGame\Models\BotProfile;
@@ -36,12 +39,17 @@ class BotBrain
         BuildBuildingAction $buildBuildingAction,
         ResearchAction $researchAction,
         BuildUnitsAction $buildUnitsAction,
+        ExpeditionAction $expeditionAction,
+        EspionageAction $espionageAction,
+        RaidAction $raidAction,
     ) {
-        // Phase 1 is the economy. Fleet, espionage and raiding actions join this list in Phase 2.
         $this->actions = [
             $buildBuildingAction,
             $researchAction,
             $buildUnitsAction,
+            $expeditionAction,
+            $espionageAction,
+            $raidAction,
         ];
     }
 

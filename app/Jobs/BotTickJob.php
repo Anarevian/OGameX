@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Log;
 use OGame\Bots\Activity\ActivityScheduler;
 use OGame\Bots\Brain\BotBrain;
+use OGame\Bots\Perception\BotIntelWriter;
 use OGame\Bots\Support\BotSynchroniser;
 use OGame\Factories\PlayerServiceFactory;
 use OGame\Models\BotProfile;
@@ -51,6 +52,7 @@ class BotTickJob implements ShouldQueue
         BotSynchroniser $synchroniser,
         BotBrain $brain,
         ActivityScheduler $scheduler,
+        BotIntelWriter $intelWriter,
     ): void {
         $lockSeconds = (int) config('bots.tick.lock_seconds', 120);
 
@@ -75,6 +77,10 @@ class BotTickJob implements ShouldQueue
             // resource figures from whenever it last acted, and its finished buildings would
             // not exist yet.
             $synchroniser->sync($player, $profile);
+
+            // Read any espionage reports that arrived since the last turn. This must happen
+            // before the brain runs, because target selection reads bot_intel and nothing else.
+            $intelWriter->absorbReports($profile);
 
             $actionsTaken = 0;
 

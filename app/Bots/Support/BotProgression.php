@@ -168,6 +168,16 @@ class BotProgression
             }
         }
 
+        // A persona's defining technology must not round away to nothing on a young account:
+        // an Explorer with astrophysics 0 cannot run a single expedition.
+        /** @var array<string, int> $floor */
+        $floor = is_array($config['tech_floor'] ?? null) ? $config['tech_floor'] : [];
+        foreach ($floor as $machineName => $minimum) {
+            if (($levels[$machineName] ?? 0) < $minimum) {
+                $levels[$machineName] = (int) $minimum;
+            }
+        }
+
         return $this->expandTechRequirements($levels);
     }
 

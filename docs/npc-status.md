@@ -13,7 +13,7 @@ tracks what is actually built, what is verified, and what is known to be wrong o
 |---|---|---|
 | 0 — Groundwork | Data model, marking, synchroniser, spawn/despawn, Docker | **Built.** Verified: see §2. |
 | 1 — Economy bot | Tick driver, activity scheduler, brain, economy actions | **Built.** Verified: see §2. |
-| 2 — Movement and war | Fleet dispatch, espionage, raiding, fleetsave, recovery | Not started. |
+| 2 — Movement and war | Fleet dispatch, espionage, raiding, fleetsave, recovery | **Partly built.** Expedition, espionage, intel writing and raiding with fairness caps are in and tested (4/5). Fleetsave, transport, colonisation, recycling and post-battle recovery are not. One open error, §3.1. |
 | 3 — Perception and memory | Intel decay, grudges, skill-scaled mistakes | Not started (tables exist since Phase 0). |
 | 4 — Alliances | Founding, invites, ACS, buddy handling. No messaging (decision §13.4). | Not started. |
 | 5 — Scale | LOD classification, abstract economy, lazy materialisation, backpressure | Not started. |
@@ -35,6 +35,7 @@ checks below were actually executed.
 | Phase 0 tests | `./vendor/bin/phpunit --filter BotSpawnTest` | **Pass** — 12 tests, 118 assertions (~60s) |
 | Phase 1 tests | `./vendor/bin/phpunit --filter BotBrainTest` | **Pass** — 11 tests, 219 assertions (~6min) |
 | Regression | `./vendor/bin/phpunit --filter "GalaxyTest\|BootstrapTest\|AdminTest"` | **Pass** — no existing test affected |
+| Phase 2 tests | `./vendor/bin/phpunit --filter BotFleetTest` | **4 pass, 1 skipped** — the skip is the open error in §3.1 |
 
 ### How the environment was made to work
 
@@ -56,7 +57,43 @@ Recorded because it will be needed again, and because none of it is a change to 
 
 ## 3. Open errors
 
-None. Everything found while running the suite was fixed; the list is in §4.
+### 3.1 Explorer spawns with astrophysics 0, so it never runs an expedition
+
+**Status:** open. Test `BotFleetTest::testBotsDispatchFleetMissions` is skipped because of it.
+
+An Explorer is defined by running expeditions, and `ExpeditionAction` requires
+`astrophysics >= 1`. A spawned Explorer has astrophysics 0, so the action never proposes and the
+bot sends no fleets at all.
+
+A `tech_floor` of `['astrophysics' => 1]` was added to the explorer persona and applied in
+`BotProgression::techConfig()`, but a freshly spawned Explorer still reports
+`getResearchLevel('astrophysics') === 0` after `php artisan config:clear`. The floor is present
+in `config/bots.php` and the code path looks right, so the fault is somewhere between
+`techConfig()` and the `users_tech` row.
+
+**Reproduction**
+
+```
+php artisan ogamex:bots:despawn --all --force
+php artisan ogamex:bots:spawn --count=1 --persona=explorer --near-humans=0
+php artisan tinker
+>>> $p = OGame\Models\BotProfile::first();
+>>> app(OGame\Factories\PlayerServiceFactory::class)->make($p->user_id, true)->getResearchLevel('astrophysics');
+=> 0   // expected >= 1
+```
+
+**Next things to check, in order**
+
+1. Whether `users_tech` actually has an `astrophysics` column, and whether
+   `SpawnBots::createUserTech()`'s dynamic `$userTech->{$machineName} = $level` writes it. A
+   column that does not exist would be silently dropped rather than throwing.
+2. Whether `expandTechRequirements()` is discarding the floored entry — astrophysics requires
+   espionage technology 4 and impulse drive 3, and the expansion runs *after* the floor is applied.
+3. Whether `PlayerService::getResearchLevel()` reads the value by a different name.
+
+**Impact:** Explorers are inert — no expeditions, and with no other fleet action reachable at
+their tech level, no fleet missions at all. Raiders and Fleeters are unaffected (their tests
+pass), so this is one persona, not the fleet layer as a whole.
 
 ---
 
