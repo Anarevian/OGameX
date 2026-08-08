@@ -81,6 +81,8 @@
                     'LOCA_GALAXY_LEGEND'                             => __('t_ingame.galaxy.legend'),
                     'LOCA_GALAXY_PLAYER_STATUS_A'                    => __('t_ingame.galaxy.status_admin_abbr'),
                     'LOCA_GALAXY_LEGEND_ADMIN'                       => __('t_ingame.galaxy.legend_admin'),
+                    'LOCA_GALAXY_PLAYER_STATUS_NPC'                  => __('t_ingame.galaxy.status_npc_abbr'),
+                    'LOCA_GALAXY_LEGEND_NPC'                         => __('t_ingame.galaxy.legend_npc'),
                     'LOCA_GALAXY_PLAYER_STATUS_S'                    => __('t_ingame.galaxy.status_strong_abbr'),
                     'LOCA_GALAXY_LEGEND_STRONG_PLAYER'               => __('t_ingame.galaxy.legend_strong'),
                     'LOCA_GALAXY_PLAYER_STATUS_N'                    => __('t_ingame.galaxy.status_noob_abbr'),
@@ -522,6 +524,9 @@
                 <dl>
                     <dt class="abbreviation status_abbr_admin">{{ __('t_ingame.galaxy.status_admin_abbr') }}</dt>
                     <dd class="description">{{ __('t_ingame.galaxy.legend_admin') }}</dd>
+
+                    <dt class="abbreviation status_abbr_npc">{{ __('t_ingame.galaxy.status_npc_abbr') }}</dt>
+                    <dd class="description">{{ __('t_ingame.galaxy.legend_npc') }}</dd>
 
                     <dt class="abbreviation status_abbr_strong">{{ __('t_ingame.galaxy.status_strong_abbr') }}</dt>
                     <dd class="description">{{ __('t_ingame.galaxy.legend_strong') }}</dd>

@@ -402,6 +402,8 @@ return [
         'legend'                       => 'Legenda',
         'status_admin_abbr'            => 'A',
         'legend_admin'                 => 'Beheerder',
+        'status_npc_abbr'              => 'NPC',
+        'legend_npc'                   => 'Computergestuurde speler',
         'status_strong_abbr'           => 's',
         'legend_strong'                => 'sterkere speler',
         'status_noob_abbr'             => 'n',

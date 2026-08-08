@@ -423,6 +423,8 @@ return [
         'legend'                       => 'Legend',
         'status_admin_abbr'            => 'A',
         'legend_admin'                 => 'Administrator',
+        'status_npc_abbr'              => 'NPC',
+        'legend_npc'                   => 'Computer-controlled player',
         'status_strong_abbr'           => 's',
         'legend_strong'                => 'stronger player',
         'status_noob_abbr'             => 'n',

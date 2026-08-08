@@ -188,6 +188,16 @@ class PlayerService
     }
 
     /**
+     * Checks if the player is an NPC (bot) rather than a human.
+     *
+     * @return bool
+     */
+    public function isBot(): bool
+    {
+        return $this->user->isBot();
+    }
+
+    /**
      * Checks if the player is inactive.
      *
      * @return bool

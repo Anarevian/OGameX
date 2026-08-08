@@ -101,6 +101,9 @@
                                         <span class="playername{{ ($highscorePlayer['is_admin'] ?? false) ? ' status_abbr_admin' : '' }}">
                                             {{ $highscorePlayer['name'] }}
                                         </span>
+                                        @if($highscorePlayer['is_npc'] ?? false)
+                                            <span class="npcBadge tooltip js_hideTipOnMobile" title="{{ __('t_ingame.galaxy.legend_npc') }}">{{ __('t_ingame.galaxy.status_npc_abbr') }}</span>
+                                        @endif
                                     </a>
                                 </div>
                                 <div class="honorScore">

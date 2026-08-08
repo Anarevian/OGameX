@@ -84,6 +84,32 @@ Two useful details:
 `QUEUE_CONNECTION=database` by default. `routes/console.php` is the existing place to register
 scheduled commands. So the infrastructure for a tick driver already exists — we only add to it.
 
+### 2.4a Container integration — no new services needed
+
+Both `docker-compose.yml` and `docker-compose.prod.yml` already define an `ogamex-scheduler` and an
+`ogamex-queue-worker` service, selected by the `CONTAINER_ROLE` environment variable in
+`docker/entrypoint.sh`. That is the whole runtime the bot system needs:
+
+| Piece | Container | How it gets there |
+|---|---|---|
+| `ogamex:bots:tick` sweep | `ogamex-scheduler` | Registered in `routes/console.php`; the scheduler loop picks it up automatically. |
+| `BotTickJob` per bot | `ogamex-queue-worker` | Dispatched onto the `bots` queue. |
+| Migrations | `ogamex-app` | The entrypoint already runs `php artisan migrate --force` on boot. |
+| `ogamex:bots:spawn` / `despawn` | manual | `docker compose exec ogamex-app php artisan ogamex:bots:spawn` |
+
+One change was required: the worker ran plain `queue:work`, which consumes only the `default`
+queue, so bot jobs would never have been picked up. It now runs
+`queue:work --queue=default,bots` — queue names in priority order, so ordinary game jobs are always
+drained before NPC work and a large bot population cannot delay them.
+
+Spawning is deliberately **not** automatic on container boot. Creating hundreds of accounts is a
+large, hard-to-undo side effect that a server owner should trigger knowingly. `BOTS_ENABLED` and
+`BOTS_POPULATION` are in both `.env.example` files, defaulting to disabled.
+
+Two operational notes for Phase 5, when tick volume grows: `queue:work` caches code, so the worker
+container must be restarted (or given `--max-time`) to pick up new bot logic; and worker memory
+should be bounded once thousands of jobs an hour are flowing through it.
+
 ### 2.5 Reusable building blocks
 
 | Need | Existing code |
@@ -365,16 +391,28 @@ a `ogamex:bots:pause` kill switch; metrics logged per sweep (bots ticked, action
 
 Phases are independently shippable; each ends with a server that still works.
 
-### Phase 0 — Groundwork
-1. `config/bots.php` with global tunables and the persona registry.
+### Phase 0 — Groundwork *(implemented)*
+1. `config/bots.php` with global tunables and the persona registry; `BotPersona` and `BotLod` enums.
 2. Migrations: `bot_profiles`, `bot_intel`, `bot_memory`, `bot_action_log` (+ index on `next_action_at`).
-3. Models `BotProfile`, `BotIntel`, `BotMemory`, `BotActionLog` with a `User::botProfile()` relation and a `User::isBot()` helper.
-3a. **Marking:** NPC badge in galaxy view and highscores, driven by `User::isBot()`, as a single shared
-    view partial (§9.7). Ship this in Phase 0 so no bot is ever visible to a player unmarked.
-4. `BotSynchroniser` — the console-safe equivalent of `GlobalGame` (player update, per-planet update, fleet missions, planet moves), with correct `time`/`last_ip` handling.
-5. `ogamex:bots:spawn` — creates accounts + homeworlds via `PlanetServiceFactory`, backdated `created_at`, persona assignment from a `--mix`, name generation. Modelled on `PreviewSeedUsers`.
-6. `ogamex:bots:despawn` — clean removal (`PlayerService::delete()` + profile rows), with `--persona` / `--all` filters.
-7. Feature test: spawn 10 bots, assert accounts, planets, tech rows and profiles exist and the game still renders (`Http200Test` style).
+3. Models `BotProfile`, `BotIntel`, `BotMemory`, `BotActionLog` with a `User::botProfile()` relation and `User::isBot()` / `PlayerService::isBot()` helpers.
+3a. **Marking:** NPC badge in galaxy view (payload flag + `getPlayerAbbreviations()` + legend entry) and
+    in the highscore table, with translations in all four shipped languages (§9.7). In Phase 0 so no
+    bot is ever visible to a player unmarked.
+3b. **Bot-detection exclusion:** NPCs are filtered out of the admin panel's shared-IP grouping and
+    activity signals. Done here rather than in Phase 6 because spawning a population would otherwise
+    bury every real suspect the moment bots exist.
+4. `BotSynchroniser` — the console-safe equivalent of `GlobalGame` (research queue, per-planet update,
+   fleet missions), reusing `PlayerService::updateResearchQueue()` and handling `time` / `last_ip`
+   itself. Planet moves are left to the sweep, not run per bot, because `processDueMoves()` is global.
+5. `ogamex:bots:spawn` — accounts, homeworlds, colonies, tech and profiles from the persona mix, with
+   backdated registration, age-scaled progression (`BotProgression`), varied naming
+   (`BotNameGenerator`), per-bot trait rolls (`BotPersonaRoller`) and optional placement near humans.
+6. `ogamex:bots:despawn` — clean removal via `PlayerService::delete()`, with `--persona` / `--limit` /
+   `--all` filters and a confirmation prompt.
+6a. Docker: `queue:work --queue=default,bots` in `docker/entrypoint.sh`, and `BOTS_*` entries in both
+    `.env.example` files (§2.4a).
+7. Feature test: spawn bots of every persona, assert accounts, planets, tech rows and profiles exist,
+   that the marking shows, that the synchroniser advances state, and that despawn leaves nothing behind.
 
 ### Phase 1 — A living economy bot
 8. `BotTickCommand` (`ogamex:bots:tick`) + `BotTickJob` + per-bot cache lock; register in `routes/console.php` as `->everyMinute()->withoutOverlapping()`.

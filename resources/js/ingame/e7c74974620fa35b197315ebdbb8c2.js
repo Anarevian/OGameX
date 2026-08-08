@@ -35075,6 +35075,12 @@ function getPlayerColorClass(player) {
 function getPlayerAbbreviations(player) {
   let returnStatus = [];
 
+  // NPC accounts are always marked, independently of any other status they may have
+  // (an NPC can also be inactive, on vacation, a newbie, and so on).
+  if (player.isNpc) {
+    returnStatus.push(`<span class="status_abbr_npc tooltip js_hideTipOnMobile" title="${loca.LOCA_GALAXY_LEGEND_NPC}">${loca.LOCA_GALAXY_PLAYER_STATUS_NPC}</span>`);
+  }
+
   if (player.isAdmin) {
     returnStatus.push(`<span class="status_abbr_admin tooltip js_hideTipOnMobile" title="${loca.LOCA_GALAXY_LEGEND_ADMIN}">${loca.LOCA_GALAXY_PLAYER_STATUS_A}</span>`);
   } else {

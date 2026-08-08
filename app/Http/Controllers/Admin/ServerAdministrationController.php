@@ -14,6 +14,7 @@ use OGame\Factories\GameMissionFactory;
 use OGame\Factories\PlayerServiceFactory;
 use OGame\Http\Controllers\OGameController;
 use OGame\Models\Ban;
+use OGame\Models\BotProfile;
 use OGame\Models\Enums\PlanetType;
 use OGame\Models\FleetMission;
 use OGame\Models\Planet;
@@ -49,12 +50,17 @@ class ServerAdministrationController extends OGameController
         // PHP 8.5 stdClass deserialisation issues with the file cache driver. Cast back to objects on read.
         /** @var array<string, array{ip: string, type: string, user_ids: array<int>, cross_missions: array<int, object>}> $ipGroupsRaw */
         $ipGroupsRaw = Cache::remember('bot_detection_ip_groups', 1800, function () {
+            // NPC accounts are excluded from every detection signal. They are openly marked
+            // bots by design, so flagging them here would bury the real suspects.
+            $npcUserIds = $this->npcUserIds();
+
             // --- Shared IP groups ---
             // Find IPs (last_ip) shared by 2–10 users. Groups larger than 10 are likely
             // shared infrastructure (VPNs, university networks) and are excluded to reduce noise.
             $sharedLastIps = DB::table('users')
                 ->select('last_ip')
                 ->whereNotNull('last_ip')
+                ->whereNotIn('id', $npcUserIds)
                 ->groupBy('last_ip')
                 ->havingRaw('COUNT(*) > 1 AND COUNT(*) <= 10')
                 ->pluck('last_ip');
@@ -63,6 +69,7 @@ class ServerAdministrationController extends OGameController
             $sharedRegisterIps = DB::table('users')
                 ->select('register_ip')
                 ->whereNotNull('register_ip')
+                ->whereNotIn('id', $npcUserIds)
                 ->groupBy('register_ip')
                 ->havingRaw('COUNT(*) > 1 AND COUNT(*) <= 10')
                 ->pluck('register_ip');
@@ -70,7 +77,7 @@ class ServerAdministrationController extends OGameController
             $groups = [];
 
             foreach ($sharedLastIps as $ip) {
-                $userIds = User::where('last_ip', $ip)->pluck('id')->toArray();
+                $userIds = User::where('last_ip', $ip)->whereNotIn('id', $npcUserIds)->pluck('id')->toArray();
                 $groups[$ip] = [
                     'ip'             => $ip,
                     'type'           => 'Last active IP',
@@ -83,7 +90,7 @@ class ServerAdministrationController extends OGameController
                 if (isset($groups[$ip])) {
                     continue; // already captured via last_ip pass
                 }
-                $userIds = User::where('register_ip', $ip)->pluck('id')->toArray();
+                $userIds = User::where('register_ip', $ip)->whereNotIn('id', $npcUserIds)->pluck('id')->toArray();
                 $groups[$ip] = [
                     'ip'             => $ip,
                     'type'           => 'Registration IP',
@@ -137,7 +144,12 @@ class ServerAdministrationController extends OGameController
             ->sortByDesc(fn ($entry) => count($entry['signals']))
             ->values();
 
-        $botSuspects = $allSuspects->reject(fn ($s) => in_array($s['user']?->id, $dismissedUserIds, true))->values();
+        // Drop dismissed accounts, and NPCs, which are marked bots by design rather than suspects.
+        $npcUserIds = $this->npcUserIds();
+        $botSuspects = $allSuspects
+            ->reject(fn ($s) => in_array($s['user']?->id, $dismissedUserIds, true))
+            ->reject(fn ($s) => in_array($s['user']?->id, $npcUserIds, true))
+            ->values();
         $stuckMissionsSettings = $this->stuckMissionsSettings();
         $stuckMissions = $this->getStuckFleetMissions($stuckMissionsSettings['min_overdue_hours']);
         $attackBlockUntil = (int) $settingsService->get('attack_block_until', 0);
@@ -288,6 +300,20 @@ class ServerAdministrationController extends OGameController
             'attack_reaction_seconds'         => (int) $s->get('bot_detection_attack_reaction_seconds', 10),
             'attack_reaction_min_occurrences' => (int) $s->get('bot_detection_attack_reaction_min_occurrences', 1),
         ];
+    }
+
+    /**
+     * Get the user IDs of all NPC (bot) accounts.
+     *
+     * NPC accounts are deliberately computer-controlled and are marked as such in game, so they
+     * are excluded from every bot-detection signal. Without this the panel would be flooded with
+     * the server's own NPCs and real suspects would be impossible to spot.
+     *
+     * @return array<int, int>
+     */
+    private function npcUserIds(): array
+    {
+        return BotProfile::pluck('user_id')->all();
     }
 
     /**

@@ -574,6 +574,8 @@ class GalaxyController extends OGameController
             'isLongInactive' => $player->isLongInactive(),
             'isNewbie' => $player->isNewbie($this->playerService),
             'isStrong' => $player->isStrong($this->playerService),
+            // NPCs are openly marked so players always know which accounts are bots.
+            'isNpc' => $player->isBot(),
             'isOnVacation' => $player->isInVacationMode(),
             'allianceId' => $alliance?->id,
             'allianceTag' => $allianceTag,

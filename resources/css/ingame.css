@@ -10,6 +10,7 @@
 @import "ingame/modules/sprites.css";
 @import "ingame/modules/highscore.css";
 @import "ingame/modules/messages.css";
+@import "ingame/modules/npc.css";
 
 
 /* New style overrides that conflict with some existing styles, implement later */

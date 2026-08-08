@@ -341,6 +341,8 @@ return [
         'legend'                       => '圖例',
         'status_admin_abbr'            => 'A',
         'legend_admin'                 => '管理員',
+        'status_npc_abbr'              => 'NPC',
+        'legend_npc'                   => '電腦控制的玩家',
         'status_strong_abbr'           => 's',
         'legend_strong'                => '較強玩家',
         'status_noob_abbr'             => 'n',

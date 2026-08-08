@@ -51,6 +51,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property-read DatabaseNotificationCollection<int, DatabaseNotification> $notifications
  * @property-read int|null $notifications_count
  * @property-read UserTech|null $tech
+ * @property-read BotProfile|null $botProfile
  * @method static UserFactory factory($count = null, $state = [])
  * @method static Builder|User newModelQuery()
  * @method static Builder|User newQuery()
@@ -170,6 +171,35 @@ class User extends Authenticatable
     public function highscore(): HasOne
     {
         return $this->hasOne(Highscore::class, 'player_id');
+    }
+
+    /**
+     * Get the bot profile associated with the user, if this account is an NPC.
+     *
+     * @return HasOne
+     */
+    public function botProfile(): HasOne
+    {
+        return $this->hasOne(BotProfile::class);
+    }
+
+    /**
+     * Check if this account is an NPC (bot) rather than a human player.
+     *
+     * NPCs are openly marked in the galaxy view and the highscores, so this is read by the
+     * presentation layer as well as by the bot subsystem itself.
+     *
+     * @return bool
+     */
+    public function isBot(): bool
+    {
+        // Use the loaded relation when it is already available to avoid a query per row in the
+        // galaxy and highscore listings, which render many players at once.
+        if ($this->relationLoaded('botProfile')) {
+            return $this->getRelation('botProfile') !== null;
+        }
+
+        return $this->botProfile()->exists();
     }
 
     /**

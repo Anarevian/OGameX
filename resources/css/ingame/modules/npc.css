@@ -1,0 +1,25 @@
+/*
+ * NPC (bot player) marking.
+ *
+ * NPC accounts are openly marked so players always know which accounts are computer
+ * controlled. The badge appears next to the player name in the galaxy view and in the
+ * highscore tables, alongside the existing status abbreviations.
+ *
+ * The colour is deliberately distinct from every existing status_abbr_* class so an NPC
+ * that is also inactive, banned or on vacation stays readable.
+ */
+
+.status_abbr_npc,
+.status_abbr_npc:link,
+.status_abbr_npc:visited,
+.status_abbr_npc:hover {
+    color: #b48ce0;
+}
+
+/* Highscore rows: the badge follows the player name rather than replacing its colour. */
+.userHighscore .npcBadge {
+    color: #b48ce0;
+    font-size: 10px;
+    margin-left: 3px;
+    text-transform: uppercase;
+}

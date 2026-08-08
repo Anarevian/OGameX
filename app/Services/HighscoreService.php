@@ -372,6 +372,8 @@ class HighscoreService
                     'planet_coords' => $mainPlanet->getPlanetCoordinates(),
                     'rank' => $playerScore->{$this->highscoreType->name.'_rank'},
                     'is_admin' => $playerService->isAdmin(),
+                    // NPCs are openly marked in the rankings as well as in the galaxy view.
+                    'is_npc' => $playerService->isBot(),
                     'alliance_tag' => $allianceTag,
                     'alliance_id' => $allianceId,
                     'total_ships' => $totalShips,

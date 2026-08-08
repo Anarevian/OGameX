@@ -402,6 +402,8 @@ return [
         'legend'                       => 'Legenda',
         'status_admin_abbr'            => 'A',
         'legend_admin'                 => 'Amministratore',
+        'status_npc_abbr'              => 'NPC',
+        'legend_npc'                   => 'Giocatore controllato dal computer',
         'status_strong_abbr'           => 'f',
         'legend_strong'                => 'giocatore più forte',
         'status_noob_abbr'             => 'd',

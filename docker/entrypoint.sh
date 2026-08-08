@@ -27,7 +27,9 @@ if [ "$role" = "scheduler" ]; then
         sleep 60
     done
 elif [ "$role" = "queue" ]; then
-      php /var/www/artisan queue:work --verbose --no-interaction
+      # The queue names are listed in priority order: everything on "default" is drained before
+      # any NPC work is picked up, so a large bot population can never delay normal game jobs.
+      php /var/www/artisan queue:work --queue=default,bots --verbose --no-interaction
 elif [ "$role" = "reverb" ]; then
     php /var/www/artisan reverb:start --host="${REVERB_SERVER_HOST:-0.0.0.0}" --port="${REVERB_SERVER_PORT:-8090}"
 elif [ "$role" = "app" ]; then
