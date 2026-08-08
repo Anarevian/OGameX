@@ -35,6 +35,9 @@ class BuildUnitsAction implements BotAction
         'battle_ship' => 0.6,
         'espionage_probe' => 0.5,
         'recycler' => 0.4,
+        // Not a fleet asset, but nothing else would ever build one, and without it a bot can
+        // never colonise. Gated below so it is only proposed when expansion is actually possible.
+        'colony_ship' => 0.7,
     ];
 
     /**
@@ -109,6 +112,10 @@ class BuildUnitsAction implements BotAction
             return null;
         }
 
+        if ($machineName === 'colony_ship' && !$this->wantsColonyShip($context, $planet)) {
+            return null;
+        }
+
         try {
             if (!ObjectService::objectValidPlanetType($machineName, $planet)) {
                 return null;
@@ -128,8 +135,16 @@ class BuildUnitsAction implements BotAction
             return null;
         }
 
-        $amount = $this->batchSize($context, $planet, $unitPrice);
+        $amount = $machineName === 'colony_ship'
+            ? 1
+            : $this->batchSize($context, $planet, $unitPrice);
+
         if ($amount < 1) {
+            return null;
+        }
+
+        // One colony ship at a time still has to be affordable.
+        if ($machineName === 'colony_ship' && !$planet->hasResources($unitPrice)) {
             return null;
         }
 
@@ -151,6 +166,30 @@ class BuildUnitsAction implements BotAction
                 $this->unitQueueService->add($planet, $object->id, $amount);
             },
         );
+    }
+
+    /**
+     * Whether a colony ship is worth building right now.
+     *
+     * Only when the bot is below its astrophysics-derived planet limit and is not already sitting
+     * on one it has not used. A stockpile of colony ships is a wasted investment, and a bot that
+     * keeps building them while at its limit looks broken.
+     */
+    private function wantsColonyShip(BotContext $context, PlanetService $planet): bool
+    {
+        $player = $context->player;
+
+        if (count($player->planets->all()) >= $player->getMaxPlanetAmount()) {
+            return false;
+        }
+
+        foreach ($player->planets->all() as $owned) {
+            if ($owned->getObjectAmount('colony_ship') > 0) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

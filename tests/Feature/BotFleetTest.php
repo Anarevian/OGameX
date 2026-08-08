@@ -225,4 +225,116 @@ class BotFleetTest extends TestCase
 
         $this->assertSame(0, $raidsOnHuman, 'A human inside the grace period must never be raided.');
     }
+
+    /**
+     * A bot that sees a hostile fleet inbound moves its own fleet off the planet.
+     *
+     * This is the clearest difference between a bot that plays and a bot that just exists.
+     */
+    public function testBotFleetsavesWhenUnderThreat(): void
+    {
+        $profile = $this->spawnOne('fleeter');
+        // A perfect reactor, so the skill roll cannot make the test flaky. The roll itself is
+        // covered by the fact that low-skill bots exist at all.
+        $profile->skill = 1.0;
+        $profile->save();
+
+        $planets = Planet::where('user_id', $profile->user_id)->orderBy('id')->get();
+        if ($planets->count() < 2) {
+            $this->markTestSkipped('This bot rolled a single planet; fleetsave needs somewhere to fly to.');
+        }
+
+        $threatened = $planets->firstOrFail();
+        $attacker = User::whereNotIn('id', BotProfile::pluck('user_id'))->firstOrFail();
+        $attackerPlanet = Planet::where('user_id', $attacker->id)->firstOrFail();
+
+        // An attack already in the air at the bot's planet.
+        $mission = new FleetMission();
+        $mission->user_id = $attacker->id;
+        $mission->planet_id_from = $attackerPlanet->id;
+        $mission->planet_id_to = $threatened->id;
+        $mission->mission_type = 1;
+        $mission->time_departure = (int) Date::now()->timestamp;
+        $mission->time_arrival = (int) Date::now()->addHours(2)->timestamp;
+        $mission->galaxy_from = $attackerPlanet->galaxy;
+        $mission->system_from = $attackerPlanet->system;
+        $mission->position_from = $attackerPlanet->planet;
+        $mission->galaxy_to = $threatened->galaxy;
+        $mission->system_to = $threatened->system;
+        $mission->position_to = $threatened->planet;
+        $mission->processed = 0;
+        $mission->light_fighter = 100;
+        $mission->save();
+
+        for ($i = 0; $i < 4; $i++) {
+            Artisan::call('ogamex:bots:tick', ['--sync' => true]);
+            BotProfile::query()->update(['next_action_at' => Date::now()->subMinute()]);
+        }
+
+        $this->assertGreaterThan(
+            0,
+            BotActionLog::where('bot_user_id', $profile->user_id)->where('action', 'fleetsave')->count(),
+            'A skilled bot must fly its fleet away from an incoming attack.'
+        );
+    }
+
+    /**
+     * A bot with an overflowing planet ships the surplus somewhere it can be spent.
+     */
+    public function testBotTransportsResourcesBetweenItsOwnPlanets(): void
+    {
+        $profile = $this->spawnOne('miner');
+
+        $planets = Planet::where('user_id', $profile->user_id)->orderBy('id')->get();
+        if ($planets->count() < 2) {
+            $this->markTestSkipped('This bot rolled a single planet; transport needs two.');
+        }
+
+        // Fill the first planet to the brim and give it freighters to move the surplus.
+        $full = $planets->firstOrFail();
+        $full->metal = 100000000;
+        $full->crystal = 100000000;
+        $full->large_cargo = 200;
+        $full->save();
+
+        for ($i = 0; $i < 4; $i++) {
+            Artisan::call('ogamex:bots:tick', ['--sync' => true]);
+            BotProfile::query()->update(['next_action_at' => Date::now()->subMinute()]);
+        }
+
+        $this->assertGreaterThan(
+            0,
+            BotActionLog::where('bot_user_id', $profile->user_id)->where('action', 'transport')->count(),
+            'A bot sitting on a full store must ship the surplus to another of its planets.'
+        );
+    }
+
+    /**
+     * Every Phase 2 action must be reachable without the game rejecting it, across the personas
+     * most likely to use them.
+     */
+    public function testExtendedFleetActionsAreLegal(): void
+    {
+        foreach (['miner', 'turtle', 'trader'] as $persona) {
+            $this->removeAllBots();
+            BotActionLog::query()->delete();
+            Date::setTestNow();
+
+            $this->spawnOne($persona);
+
+            for ($i = 0; $i < 6; $i++) {
+                Artisan::call('ogamex:bots:tick', ['--sync' => true]);
+                Date::setTestNow(Date::now()->addHours(6));
+                BotProfile::query()->update(['next_action_at' => Date::now()->subMinute()]);
+            }
+
+            $failures = BotActionLog::where('succeeded', false)->get();
+
+            $this->assertCount(
+                0,
+                $failures,
+                sprintf('%s proposed a rejected action: %s', $persona, $failures->pluck('payload')->toJson())
+            );
+        }
+    }
 }

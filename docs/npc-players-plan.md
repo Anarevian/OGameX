@@ -106,6 +106,11 @@ Spawning is deliberately **not** automatic on container boot. Creating hundreds 
 large, hard-to-undo side effect that a server owner should trigger knowingly. `BOTS_ENABLED` and
 `BOTS_POPULATION` are in both `.env.example` files, defaulting to disabled.
 
+Consequently `BOTS_ENABLED=true` on its own produces no bots at all, which is the first thing
+everyone trips over: the flag only lets *existing* bots act, and `BOTS_POPULATION` is only the
+default `--count` for the spawn command. The full first-run order is in
+[`npc-status.md` §6.1](npc-status.md).
+
 Two operational notes for Phase 5, when tick volume grows: `queue:work` caches code, so the worker
 container must be restarted (or given `--max-time`) to pick up new bot logic; and worker memory
 should be bounded once thousands of jobs an hour are flowing through it.

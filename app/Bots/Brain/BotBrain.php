@@ -6,10 +6,14 @@ use Illuminate\Support\Str;
 use OGame\Bots\Actions\BotAction;
 use OGame\Bots\Actions\BuildBuildingAction;
 use OGame\Bots\Actions\BuildUnitsAction;
+use OGame\Bots\Actions\ColoniseAction;
 use OGame\Bots\Actions\EspionageAction;
 use OGame\Bots\Actions\ExpeditionAction;
+use OGame\Bots\Actions\FleetsaveAction;
 use OGame\Bots\Actions\RaidAction;
+use OGame\Bots\Actions\RecycleAction;
 use OGame\Bots\Actions\ResearchAction;
+use OGame\Bots\Actions\TransportAction;
 use OGame\Models\BotActionLog;
 use OGame\Models\BotProfile;
 use OGame\Services\PlayerService;
@@ -42,6 +46,10 @@ class BotBrain
         ExpeditionAction $expeditionAction,
         EspionageAction $espionageAction,
         RaidAction $raidAction,
+        FleetsaveAction $fleetsaveAction,
+        TransportAction $transportAction,
+        ColoniseAction $coloniseAction,
+        RecycleAction $recycleAction,
     ) {
         $this->actions = [
             $buildBuildingAction,
@@ -50,6 +58,10 @@ class BotBrain
             $expeditionAction,
             $espionageAction,
             $raidAction,
+            $fleetsaveAction,
+            $transportAction,
+            $coloniseAction,
+            $recycleAction,
         ];
     }
 

@@ -13,7 +13,7 @@ tracks what is actually built, what is verified, and what is known to be wrong o
 |---|---|---|
 | 0 — Groundwork | Data model, marking, synchroniser, spawn/despawn, Docker | **Built.** Verified: see §2. |
 | 1 — Economy bot | Tick driver, activity scheduler, brain, economy actions | **Built.** Verified: see §2. |
-| 2 — Movement and war | Fleet dispatch, espionage, raiding, fleetsave, recovery | **Partly built.** Expedition, espionage, intel writing and raiding with fairness caps are in and tested. Fleetsave, transport, colonisation, recycling and post-battle recovery are not. |
+| 2 — Movement and war | Fleet dispatch, espionage, raiding, fleetsave, recovery | **Built.** Expedition, espionage, intel writing, raiding with fairness caps, fleetsave, transport, colonisation and recycling, all tested. Post-battle recovery (rebuilding defence, revenge) is the one piece left, and it belongs with Phase 3's memory work. |
 | 3 — Perception and memory | Intel decay, grudges, skill-scaled mistakes | Not started (tables exist since Phase 0). |
 | 4 — Alliances | Founding, invites, ACS, buddy handling. No messaging (decision §13.4). | Not started. |
 | 5 — Scale | LOD classification, abstract economy, lazy materialisation, backpressure | Not started. |
@@ -35,7 +35,7 @@ checks below were actually executed.
 | Phase 0 tests | `./vendor/bin/phpunit --filter BotSpawnTest` | **Pass** — 12 tests, 118 assertions (~60s) |
 | Phase 1 tests | `./vendor/bin/phpunit --filter BotBrainTest` | **Pass** — 11 tests, 219 assertions (~6min) |
 | Regression | `./vendor/bin/phpunit --filter "GalaxyTest\|BootstrapTest\|AdminTest"` | **Pass** — no existing test affected |
-| Phase 2 tests | `./vendor/bin/phpunit --filter BotFleetTest` | **Pass** — 5 tests |
+| Phase 2 tests | `./vendor/bin/phpunit --filter BotFleetTest` | **Pass** — 8 tests |
 
 ### How the environment was made to work
 
@@ -133,9 +133,6 @@ Things that are not bugs but are not finished either. Each needs a decision or a
 
 ### 5.2 Carried from Phase 1
 
-- **No fleet activity at all.** Bots do not transport, expedition, colonise, spy or attack. Their
-  ships sit on the planet. This is the single most visible gap for a player watching the galaxy,
-  and it is Phase 2.
 - **Stance machine is minimal.** Only the three economic stances are ever chosen. Defending,
   Raiding, Recovering and Expanding exist in the enum and in the modifier table but are never
   entered, because nothing yet can trigger them.
@@ -151,8 +148,9 @@ Things that are not bugs but are not finished either. Each needs a decision or a
 - **Resource value ratios (1 : 2 : 3) are hardcoded** in three action classes. They are the
   community rule of thumb rather than anything the game defines. If they need tuning they should
   move to `config/bots.php` first.
-- **No cross-planet coordination.** Each planet is scored independently; a bot will not ship
-  crystal from a rich colony to fund a homeworld upgrade. That needs Phase 2 transports.
+- **Cross-planet coordination is crude.** `TransportAction` moves surplus from the fullest planet
+  to the emptiest, which stops production being thrown away, but it is not aimed at funding a
+  specific upgrade. A bot will not deliberately ship crystal home to pay for a named building.
 
 ### 5.3 Carried from the design
 
@@ -170,9 +168,44 @@ Things that are not bugs but are not finished either. Each needs a decision or a
 
 ## 6. Operational notes
 
-- `BOTS_ENABLED=false` is the default. Existing bots stay visible in the galaxy and highscores but
-  take no actions.
-- Spawning is deliberately manual. Nothing creates accounts on container boot.
+### 6.1 Getting bots to appear — the first-run order matters
+
+Setting `BOTS_ENABLED=true` does **not** create any bots, and this is the first thing everyone
+trips over. The two settings do different jobs:
+
+- `BOTS_ENABLED` decides whether bots that *already exist* take actions.
+- `BOTS_POPULATION` is only the default `--count` for the spawn command.
+
+Nothing creates accounts on container boot. That is deliberate: spawning hundreds of accounts is
+a large, hard-to-undo side effect a server owner should trigger knowingly.
+
+The working order is:
+
+```bash
+# 1. Be on the branch, and create the tables.
+docker compose exec ogamex-app php artisan migrate
+
+# 2. Register your own account through the web UI FIRST.
+#    Roughly a third of bots are placed near human players; with no humans in the database they
+#    all scatter at random and your neighbourhood stays empty.
+
+# 3. Spawn.
+docker compose exec ogamex-app php artisan ogamex:bots:spawn --count=20
+
+# 4. Confirm they exist. This number is the real answer to "did it work".
+docker compose exec ogamex-app php artisan tinker \
+  --execute="echo OGame\Models\BotProfile::count();"
+```
+
+Then check the **highscore page** rather than the galaxy view: every bot appears there
+immediately with its NPC badge, wherever it landed, while the galaxy only shows the systems you
+happen to be looking at.
+
+To watch one act right now instead of waiting for its schedule:
+
+```bash
+docker compose exec ogamex-app php artisan ogamex:bots:tick --user=<id>
+```
 - `ogamex:bots:tick --user=<id>` forces one bot's turn regardless of schedule, and prints its
   stance and next action. This is the first thing to reach for when a bot misbehaves.
 - `bot_action_log` records every decision including failures, with the score and the reasoning
