@@ -138,17 +138,36 @@ window closes if you want to keep a record.
 
 ### The log file
 
-The same decisions are also written to `storage/logs/bots.log` as they happen, rotated daily and
-kept for `BOTS_LOG_DAYS`. The project directory is bind-mounted into the containers, so this works
-from the host with no `docker compose exec`:
+The same decisions are also written to `storage/logs/`, rotated daily and kept for `BOTS_LOG_DAYS`.
+The channel is daily, so **the filename carries the date**: `bots-2026-08-08.log`, not `bots.log`.
+The project directory is bind-mounted into the containers, so these work from the host with no
+`docker compose exec`.
+
+Linux and macOS:
 
 ```bash
-tail -f storage/logs/bots.log
-grep raid storage/logs/bots.log
+tail -f storage/logs/bots-$(date +%F).log
+grep raid storage/logs/bots-*.log
 ```
 
-Set `BOTS_LOG_FILE=false` to turn it off. Around 200 NPCs produce roughly a thousand lines a day.
-The table is written either way — turning the file off costs you `tail`, not the log.
+Windows PowerShell — `tail` and `grep` do not exist there:
+
+```powershell
+Get-Content "storage\logs\bots-$(Get-Date -Format 'yyyy-MM-dd').log" -Wait -Tail 20
+Select-String raid storage\logs\bots-*.log
+```
+
+If the dated filename is a nuisance — and across midnight it is, since the file you are following
+stops being written to — use the command instead. It reads the table, so it does not care what the
+file is called, and it works the same in every shell:
+
+```bash
+php artisan ogamex:bots:log --follow
+php artisan ogamex:bots:log --action=raid
+```
+
+Set `BOTS_LOG_FILE=false` to turn the file off. Around 200 NPCs produce roughly a thousand lines a
+day. The table is written either way — turning the file off costs you `tail`, not the log.
 
 ---
 

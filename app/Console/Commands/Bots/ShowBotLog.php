@@ -317,8 +317,9 @@ class ShowBotLog extends Command
         $printed = 0;
 
         // Catch the interrupt where possible so the file gets flushed and closed and the summary
-        // still prints. Without pcntl the loop simply runs until the process is killed, which is
-        // what `tail -f` does anyway.
+        // still prints. pcntl does not exist on Windows, where the loop simply runs until the
+        // process is killed - no data is lost either way, because each batch is flushed as it is
+        // written rather than at exit.
         if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal')) {
             pcntl_async_signals(true);
             $stop = function () use (&$running): void {

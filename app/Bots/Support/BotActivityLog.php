@@ -10,11 +10,11 @@ use Throwable;
  * Mirrors every bot decision into a plain log file as it is taken.
  *
  * The bot_action_log table is the authoritative record and the one all the tooling queries, but a
- * table is not something an operator can watch. This writes the same decisions to
- * storage/logs/bots.log, which means `tail -f` shows the universe playing itself in real time, the
- * activity survives the retention prune that eventually clears the table, and anything that reads
- * log files — docker logs, a shipper, grep — can see what the NPCs are doing without touching the
- * database.
+ * table is not something an operator can watch. This writes the same decisions to a daily file
+ * under storage/logs (bots-YYYY-MM-DD.log), which means following it shows the universe playing
+ * itself in real time, the activity survives the retention prune that eventually clears the table,
+ * and anything that reads log files — docker logs, a shipper, a search — can see what the NPCs are
+ * doing without touching the database.
  *
  * It never throws. A logging failure must not cost a bot its turn, so every path here is
  * best-effort and swallows its own errors.

@@ -222,7 +222,7 @@ the migrations, register your own account, then `php artisan ogamex:bots:spawn -
 Enabling on its own creates nothing.
 
 Every decision they take is logged. `php artisan ogamex:bots:log --follow` streams it live, and
-the same lines are written to `storage/logs/bots.log`.
+the same lines are written to a daily file, `storage/logs/bots-YYYY-MM-DD.log`.
 
 ### Assigning admin role
 By default, the first registered user is assigned the admin role which can see the admin bar and is able to change server settings. You can also assign the admin role manually via the command line:

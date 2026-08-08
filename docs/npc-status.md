@@ -290,10 +290,13 @@ The summary line is written to **stderr**, not stdout, so `--format=json | jq` a
 output double with real split streams, because `Artisan::call()` merges them and would hide a
 regression.
 
-A third surface writes the same decisions to `storage/logs/bots.log` as they happen, rotated daily
-(`BOTS_LOG_DAYS`, default 14) and switchable with `BOTS_LOG_FILE`. The project directory is
-bind-mounted into the containers, so `tail -f storage/logs/bots.log` works from the host with no
-`docker compose exec`. The file mirror is deliberately best-effort: `BotActivityLog` swallows its
+A third surface writes the same decisions to `storage/logs/` as they happen, rotated daily
+(`BOTS_LOG_DAYS`, default 14) and switchable with `BOTS_LOG_FILE`. The channel is daily, so the
+file is `bots-YYYY-MM-DD.log`, not `bots.log` — worth knowing before writing a tail command that
+silently matches nothing. The project directory is bind-mounted into the containers, so following
+it works from the host with no `docker compose exec`; `ogamex:bots:log --follow` does the same job
+without depending on the filename or on `tail` existing, which it does not on Windows.
+The file mirror is deliberately best-effort: `BotActivityLog` swallows its
 own errors, because an unwritable log directory must not cost a bot its turn. The table is written
 either way.
 
