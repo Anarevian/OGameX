@@ -144,8 +144,19 @@ return [
 
         // How much less often a bot outside any human's observation radius takes a turn.
         // Cadence only: its account is still brought fully up to date whenever it does run, or
-        // the instant a human looks at it.
+        // the instant a human looks at it, and its session is lengthened by the same factor so
+        // it takes the same number of actions per day as a bot nobody is watching from close up.
         'abstract_gap_multiplier' => (float) env('BOTS_ABSTRACT_GAP_MULTIPLIER', 6.0),
+
+        // Ceiling on a single session, so that lengthening cannot produce one job that runs for
+        // minutes. Raise it alongside abstract_gap_multiplier if you push that much past 6.
+        'max_session_actions' => (int) env('BOTS_MAX_SESSION_ACTIONS', 60),
+
+        // How long a newly registered bot always runs at full cadence, whatever its level of
+        // detail says. Slowing an account that owns nothing does not save meaningful work and
+        // stops it ever developing, because the five-slot building queue caps how much a single
+        // long session can achieve. Set to 0 to apply the multiplier from the first turn.
+        'full_cadence_days' => (int) env('BOTS_FULL_CADENCE_DAYS', 14),
 
         // Skip a sweep entirely when the bots queue is already this far behind, so a slow worker
         // cannot accumulate an unbounded backlog of turns that are stale by the time they run.

@@ -322,8 +322,42 @@ class BuildBuildingAction implements BotAction
                 return false;
             }
 
+            if ($this->alreadyQueued($planet, $machineName)) {
+                return false;
+            }
+
             return $planet->hasResources(ObjectService::getObjectPrice($machineName, $planet));
         } catch (Exception) {
+            return false;
+        }
+    }
+
+    /**
+     * Whether this building already has an entry waiting in the planet's queue.
+     *
+     * Every score here is derived from `getObjectLevel()`, which reports what is **built** and
+     * knows nothing about what is queued. The brain re-proposes after each action, so without
+     * this check a bot scored the same upgrade at the same stale level over and over: it queued
+     * "metal mine 2" five times in one session, each time priced and paid-back as though the mine
+     * were still level 1. A mine's payback is what makes it win, and payback that never rises
+     * meant mines won every slot until the queue was full.
+     *
+     * The visible damage was everything the user of this system would notice. Bots built nothing
+     * but mines and stores; solar plants never appeared, so the planets sat in permanent energy
+     * deficit; and the robot factory, shipyard and research lab were never reached at all, which
+     * locked the accounts out of research and shipbuilding permanently.
+     *
+     * One entry per building per queue also happens to be what a competent player does early on:
+     * a mine, a different mine, a solar plant, a lab — not the same mine five times.
+     */
+    private function alreadyQueued(PlanetService $planet, string $machineName): bool
+    {
+        try {
+            $objectId = ObjectService::getObjectByMachineName($machineName)->id;
+
+            return $this->buildingQueueService->activeBuildingQueueItemCount($planet, $objectId) > 0;
+        } catch (Exception) {
+            // Unknown object: let the normal requirement checks decide.
             return false;
         }
     }

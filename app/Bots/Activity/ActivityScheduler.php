@@ -66,7 +66,14 @@ class ActivityScheduler
         // A bot nowhere near a human is simulated far less often. This changes only how often it
         // takes a turn, never what its account contains: whenever it does run, or the moment a
         // human looks at it, the synchroniser catches it up from its last update.
-        if ($profile->lod === BotLod::Abstract) {
+        //
+        // Young accounts are exempt. The saving is meant to come from not re-simulating settled
+        // empires whose next upgrade takes days anyway, but applied to an account that owns
+        // nothing it is not a saving, it is a sentence: the building queue holds five items, so a
+        // session cannot make up for a six-fold longer gap however large its action budget is,
+        // and the bot simply never gets off the ground. Measured on a fresh population, seven days
+        // of this left a Miner on metal mine 4 with no shipyard.
+        if ($profile->lod === BotLod::Abstract && !$this->isYoungAccount($profile)) {
             $gap *= (float) config('bots.tick.abstract_gap_multiplier', 6.0);
         }
 
@@ -88,6 +95,17 @@ class ActivityScheduler
 
     /**
      * How many actions this session should contain.
+     *
+     * An Abstract bot is given a proportionally longer session, because its sessions are that
+     * much further apart. Without this the level-of-detail machinery is not the cadence-only
+     * change it claims to be: stretching the gap six-fold while keeping the session the same
+     * length divides everything the bot ever achieves by six. Measured on a fresh population,
+     * that was 3.5 decisions per bot per day against the ~23 a Full bot takes, which reads as
+     * "the NPCs are not building anything" — because in a week they gained four mine levels.
+     *
+     * Batching the same number of actions into fewer sessions keeps the saving that matters.
+     * The expensive part of a turn is the synchronise-and-dispatch around it, not the actions
+     * inside it, so six long sessions still cost far less than thirty-six short ones.
      */
     public function rollSessionActions(BotProfile $profile): int
     {
@@ -100,7 +118,15 @@ class ActivityScheduler
             return 0;
         }
 
-        return random_int(max(1, $min), $max);
+        $actions = random_int(max(1, $min), $max);
+
+        if ($profile->lod === BotLod::Abstract) {
+            $actions = (int) round($actions * (float) config('bots.tick.abstract_gap_multiplier', 6.0));
+        }
+
+        // Bound the worst case so a large multiplier cannot produce a single job that runs for
+        // minutes and holds a queue slot the whole time.
+        return max(1, min($actions, (int) config('bots.tick.max_session_actions', 60)));
     }
 
     /**
@@ -127,6 +153,32 @@ class ActivityScheduler
         $wakingMinutes = $this->wakingHours($profile) * 60;
 
         return $wakingMinutes / max(1, $sessions);
+    }
+
+    /**
+     * Whether this account is still young enough to need full cadence.
+     *
+     * Measured from the account's registration date rather than the profile's, so a population
+     * spawned with --developed is backdated months and correctly treated as established from the
+     * first turn. A fresh bot registered today gets its grace period whatever else is true of it.
+     */
+    private function isYoungAccount(BotProfile $profile): bool
+    {
+        $graceDays = (int) config('bots.tick.full_cadence_days', 14);
+
+        if ($graceDays <= 0) {
+            return false;
+        }
+
+        $registeredAt = $profile->user->created_at;
+
+        // No registration date to read: treat it as young rather than condemning it to the slow
+        // lane, since being wrong the other way costs the account its whole early game.
+        if ($registeredAt === null) {
+            return true;
+        }
+
+        return $registeredAt->greaterThan(Date::now()->subDays($graceDays));
     }
 
     /**

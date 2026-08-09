@@ -69,6 +69,11 @@ class ResearchAction implements BotAction
      */
     private const VALUE = ['metal' => 1.0, 'crystal' => 2.0, 'deuterium' => 3.0];
 
+    /**
+     * Ceiling this action saturates towards, matching every other scorer.
+     */
+    private const MAX_SCORE = 3.0;
+
     public function __construct(private readonly ResearchQueueService $researchQueueService)
     {
     }
@@ -134,7 +139,21 @@ class ResearchAction implements BotAction
             // hundred resources scored in the hundreds, which drowned out every building, ship
             // and fleet candidate the bot had. Saturating the cost term keeps a cheap technology
             // attractive without letting it dominate the whole decision.
-            $score = $interest * 2.0 * (20000 / ($cost + 20000));
+            //
+            // The ceiling is the same MAX_SCORE the building scorer saturates towards, and it has
+            // to be. On 2.0 a Miner's energy technology scored 2.75 against an early mine's 2.88,
+            // so the mine won every single step - and then spent the crystal the research needed,
+            // so research was unaffordable at the next step too. Over a simulated week that came
+            // out as 97 building decisions and zero research across the whole population. Losing
+            // narrowly and repeatedly to something that consumes your budget is indistinguishable
+            // from never being considered.
+            //
+            // This action only ever proposes when the research queue is idle (see isResearching()
+            // above), and an idle research queue is pure waste that no real player tolerates, so
+            // competing on equal terms with a mine is the honest scoring rather than a thumb on
+            // the scale. Category fatigue then pulls the next research candidate back down and
+            // hands the following slots to buildings.
+            $score = $interest * self::MAX_SCORE * (20000 / ($cost + 20000));
 
             // Each level of the same technology is a little less pressing than the last.
             $score /= (1 + $level * 0.15);
